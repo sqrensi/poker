@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Покер — онлайн</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Покер онлайн</h1>
+      <p class="muted">Игра полностью в браузере. Хост создаёт стол и кидает ссылку друзьям.</p>
+    </header>
+
+    <!-- Шаг 1: ещё не в комнате -->
+    <section id="home" class="card">
+      <ol class="steps">
+        <li>Хост нажимает «Создать стол» и копирует ссылку</li>
+        <li>Друзья открывают ссылку в браузере</li>
+        <li>Когда все на месте — хост жмёт «Начать матч»</li>
+      </ol>
+      <label>Ваше имя
+        <input id="name" maxlength="24" placeholder="Игрок" autocomplete="nickname" />
+      </label>
+      <button id="btnCreate" class="primary wide">Создать стол (стать хостом)</button>
+      <div class="divider">или войти по коду</div>
+      <div class="row">
+        <input id="roomCode" maxlength="8" placeholder="Код комнаты" />
+        <button id="btnJoin">Войти</button>
+      </div>
+      <p id="lobbyErr" class="error"></p>
+    </section>
+
+    <!-- Шаг 2: лобби комнаты, ждём игроков -->
+    <section id="waiting" class="card hidden">
+      <h2 id="waitingTitle">Ожидание игроков</h2>
+      <p id="waitingHint" class="muted"></p>
+      <div id="invite" class="invite">
+        <div class="invite-label">Ссылка для присоединения</div>
+        <div class="invite-row">
+          <input id="inviteLink" readonly />
+          <button id="btnCopy" class="primary">Копировать</button>
+        </div>
+        <div class="invite-code">Код комнаты: <strong id="roomCodeShow"></strong></div>
+      </div>
+      <h3>За столом (<span id="playerCount">0</span>)</h3>
+      <div id="lobbyList" class="lobby-list"></div>
+      <button id="btnStart" class="primary wide hidden">Начать матч</button>
+      <p id="startHint" class="muted"></p>
+    </section>
+
+    <!-- Шаг 3: игра -->
+    <section id="table" class="hidden">
+      <div class="hud">
+        <div id="meta"></div>
+        <div id="log" class="log"></div>
+      </div>
+      <div id="board" class="board"></div>
+      <div id="seats" class="seats"></div>
+      <div id="hole" class="hole"></div>
+      <div id="actions" class="actions"></div>
+      <button id="btnNext" class="primary hidden">Следующая раздача</button>
+    </section>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
