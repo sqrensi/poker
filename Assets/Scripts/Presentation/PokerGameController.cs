@@ -156,11 +156,11 @@ namespace Poker.Presentation
                 camGo.tag = "MainCamera";
                 camGo.AddComponent<AudioListener>();
             }
-            _cam.transform.position = new Vector3(0f, 12.5f, -10.2f);
-            _cam.transform.rotation = Quaternion.Euler(54f, 0f, 0f);
+            _cam.transform.position = new Vector3(0f, 10.2f, -8.4f);
+            _cam.transform.rotation = Quaternion.Euler(55f, 0f, 0f);
             _cam.backgroundColor = new Color(0.04f, 0.06f, 0.08f);
             _cam.clearFlags = CameraClearFlags.SolidColor;
-            _cam.fieldOfView = MobileLayout.IsPhoneLike() ? 58f : 48f;
+            _cam.fieldOfView = 46f;
             _cam.allowMSAA = true;
             _cam.allowHDR = true;
 
@@ -175,14 +175,14 @@ namespace Poker.Presentation
             var felt = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             felt.name = "Felt";
             felt.transform.SetParent(tableRoot, false);
-            felt.transform.localScale = new Vector3(11f, 0.12f, 6.8f);
+            felt.transform.localScale = new Vector3(14.5f, 0.14f, 9.0f);
             SmoothMesh.ReplacePrimitiveMesh(felt, SmoothMesh.Cylinder());
             felt.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.06f, 0.42f, 0.22f));
 
             var rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             rim.name = "Rim";
             rim.transform.SetParent(tableRoot, false);
-            rim.transform.localScale = new Vector3(11.6f, 0.1f, 7.3f);
+            rim.transform.localScale = new Vector3(15.3f, 0.12f, 9.7f);
             rim.transform.position = new Vector3(0f, -0.04f, 0f);
             SmoothMesh.ReplacePrimitiveMesh(rim, SmoothMesh.Cylinder());
             rim.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.28f, 0.14f, 0.07f));
@@ -193,18 +193,18 @@ namespace Poker.Presentation
             // Борд ближе к центру, с запасом между картами
             var boardAnchor = new GameObject("Board").transform;
             boardAnchor.SetParent(tableRoot, false);
-            boardAnchor.position = new Vector3(0f, 0.28f, 0.35f);
+            boardAnchor.position = new Vector3(0f, 0.28f, 0.45f);
 
-            const float boardSpacing = 1.05f;
-            const float boardCardW = 0.92f;
+            const float boardSpacing = 1.2f;
+            const float boardCardW = 1.05f;
             for (int i = 0; i < 5; i++)
             {
                 float x = (i - 2) * boardSpacing;
                 _boardCards.Add(CardView.Create(boardAnchor, new Vector3(x, 0.03f * i, 0f), 0f, boardCardW, 20 + i));
             }
 
-            float radiusX = 4.35f;
-            float radiusZ = 2.85f;
+            float radiusX = 5.5f;
+            float radiusZ = 3.5f;
             for (int i = 0; i < playerCount; i++)
             {
                 float angle = -90f + i * (360f / playerCount);
@@ -215,8 +215,8 @@ namespace Poker.Presentation
 
                 var holes = new List<CardView>();
                 int baseOrder = 40 + i * 5;
-                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(-0.52f, 0.04f, 0f), 0f, 0.9f, baseOrder));
-                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(0.52f, 0.05f, 0f), 0f, 0.9f, baseOrder + 1));
+                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(-0.58f, 0.04f, 0f), 0f, 1.0f, baseOrder));
+                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(0.58f, 0.05f, 0f), 0f, 1.0f, baseOrder + 1));
                 _holeCards[i] = holes;
             }
         }
@@ -622,7 +622,8 @@ namespace Poker.Presentation
                 var player = _table.Players[i];
                 bool acting = _table.ActingSeat == i;
                 bool dealer = _table.DealerSeat == i;
-                _seats[i].Refresh(player, dealer, acting, _table.Street, _table.BigBlind);
+                bool handWinner = IsSeatHandWinner(i);
+                _seats[i].Refresh(player, dealer, acting, _table.Street, _table.BigBlind, handWinner);
 
                 string status = "";
                 if (player.IsEliminated || (player.Chips <= 0 &&
@@ -685,6 +686,20 @@ namespace Poker.Presentation
                 RefreshActionButtons();
             else if (_table.Street != Street.HandComplete)
                 SetActionButtons(false);
+        }
+
+        bool IsSeatHandWinner(int seat)
+        {
+            if (_table.MatchWinnerSeat == seat) return true;
+            var result = _table.LastResult;
+            if (result == null) return false;
+            for (int p = 0; p < result.Pots.Count; p++)
+            {
+                var winners = result.Pots[p].WinnerSeats;
+                for (int w = 0; w < winners.Count; w++)
+                    if (winners[w] == seat) return true;
+            }
+            return false;
         }
     }
 }

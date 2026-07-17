@@ -46,10 +46,10 @@ namespace Poker.Menu
             MobileLayout.EnsureTouchInput();
 
             bool phone = MobileLayout.IsPhoneLike();
-            float btnW = phone ? 420f : 360f;
-            float btnH = phone ? 72f : 64f;
-            float y0 = phone ? 10f : 30f;
-            float gap = phone ? 92f : 80f;
+            float btnW = phone ? 380f : 360f;
+            float btnH = phone ? 64f : 64f;
+            float y0 = phone ? 40f : 30f;
+            float gap = phone ? 78f : 80f;
 
             if (UnityEngine.Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
             {
@@ -61,17 +61,18 @@ namespace Poker.Menu
             var bg = CreatePanel(canvasGo.transform, Vector2.zero, Vector2.one, new Color(0.05f, 0.08f, 0.07f, 1f));
             Stretch(bg);
 
-            var title = CreateText(canvasGo.transform, "ПОКЕР", new Vector2(0f, phone ? 280f : 240f), phone ? 64 : 72, FontStyle.Bold, new Color(1f, 0.9f, 0.4f));
+            // Ландшафт: заголовок выше центра, кнопки по центру
+            var title = CreateText(canvasGo.transform, "ПОКЕР", new Vector2(0f, phone ? 200f : 240f), phone ? 56 : 72, FontStyle.Bold, new Color(1f, 0.9f, 0.4f));
             title.alignment = TextAnchor.MiddleCenter;
 
-            var sub = CreateText(canvasGo.transform, "Texas Hold'em", new Vector2(0f, phone ? 210f : 170f), phone ? 26 : 32, FontStyle.Normal, new Color(0.75f, 0.85f, 0.9f));
+            var sub = CreateText(canvasGo.transform, "Texas Hold'em", new Vector2(0f, phone ? 140f : 170f), phone ? 24 : 32, FontStyle.Normal, new Color(0.75f, 0.85f, 0.9f));
             sub.alignment = TextAnchor.MiddleCenter;
 
             string nick = PlayerIdentityService.GetNickname();
             string pid = PlayerIdentityService.GetOrCreatePlayerId();
             _idLine = CreateText(canvasGo.transform,
                 $"{nick}  ·  id …{pid.Substring(Mathf.Max(0, pid.Length - 8))}",
-                new Vector2(0f, phone ? 150f : 110f), 20, FontStyle.Normal, new Color(0.7f, 0.78f, 0.72f));
+                new Vector2(0f, phone ? 90f : 110f), 18, FontStyle.Normal, new Color(0.7f, 0.78f, 0.72f));
             _idLine.alignment = TextAnchor.MiddleCenter;
 
             MainMenuNicknameEditor.Create(canvasGo.transform, () =>
@@ -96,10 +97,10 @@ namespace Poker.Menu
             b2.GetComponent<RectTransform>().sizeDelta = new Vector2(btnW, btnH);
             b3.GetComponent<RectTransform>().sizeDelta = new Vector2(btnW, btnH);
 
-            _status = CreateText(canvasGo.transform, "", new Vector2(0f, y0 - gap * 3f - 20f), 20, FontStyle.Normal, new Color(0.85f, 0.75f, 0.45f));
+            _status = CreateText(canvasGo.transform, "", new Vector2(0f, y0 - gap * 3f - 10f), 18, FontStyle.Normal, new Color(0.85f, 0.75f, 0.45f));
             _status.alignment = TextAnchor.MiddleCenter;
             var stRt = _status.GetComponent<RectTransform>();
-            stRt.sizeDelta = new Vector2(phone ? 700f : 920f, 90f);
+            stRt.sizeDelta = new Vector2(phone ? 820f : 920f, 80f);
         }
 
         void StartBots()

@@ -15,6 +15,13 @@
 </head>
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
+  <div id="rotateGate" class="rotate-gate" hidden>
+    <div class="rotate-card">
+      <div class="rotate-icon" aria-hidden="true">↻</div>
+      <h2>Поверните телефон</h2>
+      <p>Игра только в горизонтальном положении (альбомная ориентация).</p>
+    </div>
+  </div>
   <div id="app">
     <header class="top">
       <div class="brand">
@@ -80,9 +87,9 @@
 
     <section id="queueing" class="panel hidden">
       <div class="queue-center">
-        <div class="pulse"></div>
         <h2>Поиск стола…</h2>
         <p id="queueStatus" class="lede">Ожидание игроков</p>
+        <div class="queue-progress" aria-hidden="true"><span></span></div>
         <button id="btnDequeue2" class="ghost">Отменить</button>
       </div>
     </section>

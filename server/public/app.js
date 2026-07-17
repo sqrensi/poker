@@ -397,7 +397,35 @@ function render(msg) {
   }
 }
 
+function updateOrientationGate() {
+  const gate = $("rotateGate");
+  if (!gate) return;
+  // height > width надёжнее matchMedia на части Android-браузеров
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const portrait = h > w;
+  const phone = Math.min(w, h) < 900;
+  const needRotate = portrait && phone;
+  gate.hidden = !needRotate;
+  document.body.classList.toggle("need-rotate", needRotate);
+}
+
+async function lockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock("landscape");
+    }
+  } catch {
+    /* браузер может запретить без fullscreen — CSS-заглушка останется */
+  }
+}
+
 async function boot() {
+  updateOrientationGate();
+  window.addEventListener("orientationchange", updateOrientationGate);
+  window.addEventListener("resize", updateOrientationGate);
+  lockLandscape();
+
   state.playerId = getOrCreatePlayerId();
   const savedNick = localStorage.getItem(LS_NICK);
   if (savedNick) $("name").value = savedNick;
@@ -405,7 +433,14 @@ async function boot() {
   const roomFromUrl = (params.get("room") || "").toUpperCase();
   if (roomFromUrl) $("roomCode").value = roomFromUrl;
 
-  await connect();
+  // Меню видно сразу, даже если WS ещё не поднялся
+  setView("home");
+
+  try {
+    await connect();
+  } catch (e) {
+    $("lobbyErr").textContent = e.message || String(e);
+  }
 
   $("btnEditNick").onclick = () => {
     $("name").disabled = false;

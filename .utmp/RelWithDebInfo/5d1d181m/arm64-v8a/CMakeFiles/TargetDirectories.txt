@@ -1,0 +1,8 @@
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/CMakeFiles/rebuild_cache.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/GameActivity/CMakeFiles/game.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
+C:/me/unity/poker/.utmp/RelWithDebInfo/5d1d181m/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

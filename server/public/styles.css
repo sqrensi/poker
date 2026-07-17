@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg0: #0a1210;
   --bg1: #102018;
   --felt: #0d5c38;
@@ -242,25 +242,6 @@ button.hidden, .hidden { display: none !important; }
   font-size: 2rem;
   margin: 16px 0 8px;
 }
-.pulse {
-  width: 64px; height: 64px;
-  margin: 0 auto;
-  border-radius: 50%;
-  border: 2px solid var(--gold);
-  animation: pulse 1.4s ease-out infinite;
-}
-@keyframes pulse {
-  0% { transform: scale(0.7); opacity: 1; box-shadow: 0 0 0 0 rgba(212,175,98,.5); }
-  100% { transform: scale(1.35); opacity: 0; box-shadow: 0 0 0 18px rgba(212,175,98,0); }
-}
-
-.invite {
-  background: rgba(8,18,14,.7);
-  border: 1px solid #2a3a32;
-  border-radius: 14px;
-  padding: 14px;
-  margin: 16px 0;
-}
 .invite-label { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
 .invite-row { display: flex; gap: 8px; }
 .invite-row input { margin: 0; }
@@ -343,158 +324,139 @@ button.hidden, .hidden { display: none !important; }
   text-align: center;
 }
 
-body.in-table .top { margin-bottom: 10px; }
-@media (max-width: 720px) {
-  body.in-table .top .tagline { display: none; }
-  body.in-table .brand h1 { font-size: 1.35rem; }
-  body.in-table .brand-mark { width: 36px; height: 36px; font-size: 1.1rem; border-radius: 10px; }
+.muted { color: var(--muted); }
+
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  place-items: center;
+  padding: 24px;
+  background: #0a1210;
+  color: var(--text);
+  text-align: center;
 }
-@media (max-width: 720px) {
+.rotate-card {
+  max-width: 320px;
+  padding: 28px 22px;
+  border-radius: 18px;
+  border: 1px solid rgba(212, 175, 98, 0.35);
+  background: rgba(16, 24, 22, 0.95);
+}
+.rotate-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 3px solid var(--gold);
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  color: var(--gold);
+}
+.rotate-card h2 {
+  font-family: var(--font-display);
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+  color: var(--gold-soft);
+}
+.rotate-card p { margin: 0; color: var(--muted); }
+
+.queue-progress {
+  width: min(280px, 80%);
+  height: 6px;
+  margin: 18px auto;
+  border-radius: 999px;
+  background: #1a2822;
+  overflow: hidden;
+}
+.queue-progress span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), #fff3);
+  animation: queueSlide 1.1s ease-in-out infinite;
+}
+@keyframes queueSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+
+/* Портрет на телефоне — только экран «поверните» */
+.rotate-gate { display: none; }
+body.need-rotate .rotate-gate {
+  display: grid !important;
+}
+body.need-rotate #app {
+  visibility: hidden;
+  pointer-events: none;
+}
+body:not(.need-rotate) #app {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+body.in-table .top { margin-bottom: 8px; }
+
+/* Телефон в ландшафте */
+@media (max-width: 960px) and (orientation: landscape) {
   html { -webkit-text-size-adjust: 100%; }
-  body {
-    min-height: 100dvh;
-    overscroll-behavior: none;
-  }
+  body { min-height: 100dvh; overscroll-behavior: none; }
   #app {
-    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
     max-width: 100%;
   }
-  .top {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-  .player-chip {
-    text-align: left;
-    border-radius: 14px;
-    width: 100%;
-    min-width: 0;
-  }
-  .brand-mark { width: 44px; height: 44px; font-size: 1.35rem; }
-  .tagline { font-size: 0.8rem; }
-  .panel {
-    padding: 18px 14px;
-    border-radius: 16px;
-  }
-  .panel-grid { gap: 16px; }
-  .lede { max-width: none; font-size: 0.95rem; }
-  .cta-row { flex-direction: column; }
-  .cta-row .primary.xl,
-  button.wide,
-  #btnQueue,
-  #btnCreate,
-  #btnStart {
-    width: 100%;
-    min-height: 52px;
-    font-size: 1.05rem;
-  }
-  .nick-row { flex-wrap: wrap; }
-  .nick-row input { min-height: 48px; font-size: 16px; /* iOS zoom guard */ }
-  .nick-row button { min-height: 48px; flex: 1; }
-  .row { flex-direction: column; align-items: stretch; }
-  .row input,
-  .row button { width: 100%; min-height: 48px; font-size: 16px; }
-  .invite-row { flex-direction: column; }
-  .invite-row button { width: 100%; min-height: 48px; }
-  .side { flex-direction: row; flex-wrap: wrap; }
-  .stat-card { flex: 1 1 40%; }
-  .board-card { flex: 1 1 100%; }
-  .leaderboard { max-height: 180px; }
+  .top { margin-bottom: 10px; gap: 10px; }
+  .brand-mark { width: 40px; height: 40px; font-size: 1.2rem; }
+  .brand h1 { font-size: 1.45rem; }
+  .tagline { font-size: 0.78rem; }
+  .panel { padding: 14px 16px; border-radius: 14px; }
+  .panel-grid { grid-template-columns: 1.3fr 0.9fr; gap: 14px; }
+  .cta-row .primary.xl, button.wide, #btnQueue, #btnCreate, #btnStart { min-height: 46px; }
+  .nick-row input, .nick-row button, .row input, .row button { min-height: 44px; font-size: 16px; }
+  .leaderboard { max-height: 140px; }
+  body.in-table .top .tagline { display: none; }
 
-  /* Игровой стол: контент + нижний dock */
   .table-view {
     display: flex;
-    flex-direction: column;
-    min-height: calc(100dvh - 100px);
-    margin: 0 -4px;
+    flex-direction: row;
+    gap: 12px;
+    min-height: calc(100dvh - 88px);
+    align-items: stretch;
   }
   .table-scroll {
     flex: 1;
+    min-width: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 8px;
   }
   .action-dock {
     position: sticky;
-    bottom: 0;
-    z-index: 20;
-    margin: 0 -12px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, transparent, rgba(6, 12, 10, 0.95) 28%);
-    border-top: 1px solid rgba(212, 175, 98, 0.18);
-    backdrop-filter: blur(10px);
-  }
-  .actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    top: 0;
+    align-self: flex-start;
+    width: min(220px, 32vw);
     margin: 0;
-  }
-  .actions button {
-    min-height: 54px;
-    font-size: 1.05rem;
-    padding: 14px 10px;
+    padding: 8px;
+    background: rgba(8, 14, 12, 0.92);
+    border: 1px solid rgba(212, 175, 98, 0.2);
     border-radius: 14px;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
   }
-  .actions button:nth-child(odd):last-child {
-    grid-column: 1 / -1;
-  }
-  .dock-secondary {
-    margin-top: 10px;
-  }
-  .dock-secondary button {
+  .actions { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+  .actions button {
     width: 100%;
     min-height: 48px;
-  }
-  .seats {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .seat { padding: 10px; font-size: 0.82rem; }
-  .board {
-    padding: 14px 8px;
-    min-height: 96px;
-    gap: 6px;
-  }
-  .card-face, .card-back {
-    width: 52px;
-    height: 74px;
-    font-size: 0.92rem;
-  }
-  .hole .card-face,
-  .hole .card-back {
-    width: 72px;
-    height: 102px;
-    font-size: 1.15rem;
-  }
-  button {
+    font-size: 1rem;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
+  .dock-secondary button { width: 100%; min-height: 44px; }
+  .seats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+  .seat { padding: 8px; font-size: 0.78rem; }
+  .board { padding: 12px; min-height: 84px; gap: 6px; }
+  .card-face, .card-back { width: 48px; height: 68px; font-size: 0.88rem; }
+  .hole .card-face, .hole .card-back { width: 64px; height: 90px; font-size: 1.05rem; }
+  button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   button:hover { transform: none; }
-  button:active { transform: scale(0.98); filter: brightness(1.08); }
+  button:active { transform: scale(0.98); }
 }
-
-@media (max-width: 380px) {
-  .seats { grid-template-columns: 1fr; }
-  .actions { grid-template-columns: 1fr; }
-}
-
-@media (orientation: landscape) and (max-height: 500px) {
-  .table-view { min-height: auto; }
-  .action-dock {
-    position: relative;
-    background: transparent;
-    border-top: 0;
-  }
-  .actions {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .board { min-height: 70px; padding: 10px; }
-  .card-face, .card-back { width: 44px; height: 62px; }
-}
-

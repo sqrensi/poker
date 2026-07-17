@@ -35,19 +35,8 @@ namespace Poker.Menu
             root.anchorMin = new Vector2(1f, 0f);
             root.anchorMax = new Vector2(1f, 0f);
             root.pivot = new Vector2(1f, 0f);
-            if (MobileLayout.IsPhoneLike())
-            {
-                root.anchorMin = new Vector2(0f, 0f);
-                root.anchorMax = new Vector2(1f, 0f);
-                root.pivot = new Vector2(0.5f, 0f);
-                root.anchoredPosition = new Vector2(0f, 16f);
-                root.sizeDelta = new Vector2(-24f, 160f);
-            }
-            else
-            {
-                root.anchoredPosition = new Vector2(-28f, 28f);
-                root.sizeDelta = new Vector2(360f, 150f);
-            }
+            root.anchoredPosition = new Vector2(-20f, 20f);
+            root.sizeDelta = new Vector2(MobileLayout.IsPhoneLike() ? 320f : 360f, 150f);
 
             var bg = gameObject.AddComponent<Image>();
             bg.color = new Color(0.08f, 0.11f, 0.1f, 0.92f);

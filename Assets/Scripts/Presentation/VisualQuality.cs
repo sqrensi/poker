@@ -19,7 +19,7 @@ namespace Poker.Presentation
                 if (ultra >= 0)
                     QualitySettings.SetQualityLevel(ultra, true);
 
-                QualitySettings.antiAliasing = 8;
+                QualitySettings.antiAliasing = Application.isMobilePlatform ? 2 : 8;
                 QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
                 QualitySettings.softParticles = true;
                 QualitySettings.shadows = ShadowQuality.All;

@@ -50,7 +50,8 @@ namespace Poker.Presentation
 
         void BuildBetChips(Vector3 toCenter, Vector3 sideways)
         {
-            Vector3 betPos = toCenter * 0.85f + sideways * 0.95f;
+            // Ближе к центру стола и вбок — не наезжает на hole-карты
+            Vector3 betPos = toCenter * 1.55f + sideways * 1.4f;
             betPos.y = 0.05f;
 
             _betRoot = new GameObject("BetChips");
@@ -81,7 +82,6 @@ namespace Poker.Presentation
                 Object.Destroy(body.GetComponent<Collider>());
                 body.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(red);
 
-                // Тёмная полоска сверху фишки — чтобы считать слои
                 var stripe = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 stripe.name = "Stripe";
                 stripe.transform.SetParent(layer.transform, false);
@@ -95,7 +95,8 @@ namespace Poker.Presentation
 
         void BuildDealer(Vector3 toCenter, Vector3 sideways)
         {
-            Vector3 dealerPos = toCenter * 0.55f - sideways * 1.05f;
+            // С другой стороны от ставок, тоже ближе к центру — не на картах
+            Vector3 dealerPos = toCenter * 1.5f - sideways * 1.45f;
             dealerPos.y = 0.08f;
             _dealerButton = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             _dealerButton.name = "DealerButton";
@@ -106,7 +107,6 @@ namespace Poker.Presentation
             Object.Destroy(_dealerButton.GetComponent<Collider>());
             _dealerButton.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.95f, 0.92f, 0.2f));
 
-            // Буква D — чтобы было ясно: это дилер, не блайнд
             var labelGo = new GameObject("D");
             labelGo.transform.SetParent(_dealerButton.transform, false);
             labelGo.transform.localPosition = new Vector3(0f, 1.2f, 0f);
@@ -131,7 +131,7 @@ namespace Poker.Presentation
             _dealerButton.SetActive(false);
         }
 
-        public void Refresh(Player player, bool isDealer, bool isActing, Street street, int bigBlind)
+        public void Refresh(Player player, bool isDealer, bool isActing, Street street, int bigBlind, bool isHandWinner = false)
         {
             _dealerButton.SetActive(isDealer);
 
@@ -148,7 +148,6 @@ namespace Poker.Presentation
                 layer.gameObject.SetActive(active);
                 if (!active) continue;
 
-                // Чёрная полоска только между фишками, у верхней (последней) — нет
                 var stripe = layer.Find("Stripe");
                 if (stripe != null)
                     stripe.gameObject.SetActive(i < chips - 1);
