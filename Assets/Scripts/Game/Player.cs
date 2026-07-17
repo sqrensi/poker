@@ -21,9 +21,11 @@ namespace Poker.Game
         public bool HasFolded { get; set; }
         public bool IsAllIn { get; set; }
         public bool HasActedThisStreet { get; set; }
+        /// <summary>Выбыл из матча (0 фишек после раздачи). Во время олл-ина ещё false.</summary>
+        public bool IsEliminated { get; set; }
 
-        public bool IsInHand => !HasFolded;
-        public bool CanAct => !HasFolded && !IsAllIn && Chips > 0;
+        public bool IsInHand => !HasFolded && !IsEliminated;
+        public bool CanAct => !HasFolded && !IsAllIn && !IsEliminated && Chips > 0;
 
         public Player(int seatIndex, string name, PlayerType type, int startingChips)
         {

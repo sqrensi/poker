@@ -80,9 +80,9 @@ namespace Poker.Presentation
             aImg.color = new Color(1f, 0.82f, 0.2f, 1f);
             aImg.raycastTarget = false;
 
-            _title = CreateCenteredText(panelGo.transform, "Title", new Vector2(0f, 28f), 42, FontStyle.Bold,
+            _title = CreateCenteredText(panelGo.transform, "Title", new Vector2(0f, 28f), 46, FontStyle.Bold,
                 new Color(1f, 0.92f, 0.45f));
-            _subtitle = CreateCenteredText(panelGo.transform, "Subtitle", new Vector2(0f, -40f), 24, FontStyle.Normal,
+            _subtitle = CreateCenteredText(panelGo.transform, "Subtitle", new Vector2(0f, -40f), 26, FontStyle.Normal,
                 new Color(0.9f, 0.92f, 0.95f));
         }
 
@@ -97,7 +97,6 @@ namespace Poker.Presentation
             rt.anchoredPosition = pos;
             rt.sizeDelta = new Vector2(680f, 70f);
             var text = go.AddComponent<Text>();
-            text.font = UiFont.Builtin();
             text.fontSize = size;
             text.fontStyle = style;
             text.color = color;
@@ -106,12 +105,14 @@ namespace Poker.Presentation
             text.verticalOverflow = VerticalWrapMode.Overflow;
             text.raycastTarget = false;
             text.text = "";
+            UiFont.MakeCrisp(text, 0.45f);
             return text;
         }
 
         public void Show(PokerTable table)
         {
             if (table == null || table.LastResult == null) return;
+            if (table.IsMatchOver) return; // матч перекрывает баннер раздачи
             if (table.HandNumber == _shownHand) return;
             _shownHand = table.HandNumber;
 
@@ -122,7 +123,39 @@ namespace Poker.Presentation
             if (_anim != null)
                 StopCoroutine(_anim);
             gameObject.SetActive(true);
-            _anim = StartCoroutine(Animate());
+            _anim = StartCoroutine(Animate(autoHide: true));
+        }
+
+        public void ShowMatchEnd(PokerTable table)
+        {
+            if (table == null || !table.IsMatchOver) return;
+            _shownHand = -1;
+
+            if (table.MatchWinnerSeat >= 0 && table.MatchWinnerSeat < table.Players.Count)
+            {
+                var w = table.Players[table.MatchWinnerSeat];
+                _title.text = w.Type == PlayerType.Human ? "Вы выиграли матч!" : $"{w.Name} — чемпион!";
+                _subtitle.text = $"Стек победителя: {w.Chips}";
+            }
+            else
+            {
+                _title.text = "Матч окончен";
+                _subtitle.text = table.LastActionLog ?? "";
+            }
+
+            if (_anim != null)
+                StopCoroutine(_anim);
+            gameObject.SetActive(true);
+            _anim = StartCoroutine(Animate(autoHide: false));
+        }
+
+        public void Hide()
+        {
+            if (_anim != null)
+                StopCoroutine(_anim);
+            _anim = null;
+            _group.alpha = 0f;
+            gameObject.SetActive(false);
         }
 
         static void FormatResult(PokerTable table, out string title, out string subtitle)
@@ -180,21 +213,18 @@ namespace Poker.Presentation
 
             // Сплит
             var names = new List<string>();
-            int total = 0;
             foreach (var kv in wonChips)
-            {
                 names.Add($"{table.Players[kv.Key].Name} (+{kv.Value})");
-                total += kv.Value;
-            }
             title = "Ничья — банк разделён";
             subtitle = string.Join(", ", names);
             if (!string.IsNullOrEmpty(handDesc))
                 subtitle += "  ·  " + handDesc;
         }
 
-        IEnumerator Animate()
+        IEnumerator Animate(bool autoHide)
         {
             _group.alpha = 0f;
+            _group.blocksRaycasts = !autoHide;
             _panelRt.localScale = Vector3.one * 0.82f;
 
             float t = 0f;
@@ -209,6 +239,12 @@ namespace Poker.Presentation
             }
             _group.alpha = 1f;
             _panelRt.localScale = Vector3.one;
+
+            if (!autoHide)
+            {
+                _anim = null;
+                yield break;
+            }
 
             float hold = Duration - FadeIn - FadeOut;
             if (hold > 0f)

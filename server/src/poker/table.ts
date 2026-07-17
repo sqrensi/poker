@@ -2,7 +2,7 @@ import type { Card } from "./cards.js";
 import { Deck } from "./cards.js";
 import { evaluateBest, type HandValue } from "./hand.js";
 
-export type Street = "waiting" | "preflop" | "flop" | "turn" | "river" | "showdown" | "handComplete";
+export type Street = "waiting" | "preflop" | "flop" | "turn" | "river" | "showdown" | "handComplete" | "matchComplete";
 export type ActionType = "fold" | "check" | "call" | "bet" | "raise" | "allin";
 
 export interface Player {
@@ -16,6 +16,7 @@ export interface Player {
   folded: boolean;
   allIn: boolean;
   acted: boolean;
+  eliminated?: boolean;
 }
 
 export interface LegalActions {
@@ -55,23 +56,26 @@ export class PokerTable {
   lastLog = "";
   lastPots: PotResult[] = [];
   showdownHands: Record<number, HandValue> = {};
+  matchWinner = -1;
   readonly sb: number;
   readonly bb: number;
   private deck: Deck;
   private raiseSize: number;
+  private startingChips: number;
 
   constructor(players: Player[], sb = 5, bb = 10, seed?: number) {
-    if (players.length < 2 || players.length > 9) throw new Error("2-9 players");
+    if (players.length < 2 || players.length > 10) throw new Error("2-10 players");
     this.players = players;
     this.sb = sb;
     this.bb = bb;
     this.raiseSize = bb;
     this.deck = new Deck(seed);
     this.dealer = players.length - 1;
+    this.startingChips = players[0]?.chips ?? 1000;
   }
 
   private canAct(p: Player) {
-    return !p.folded && !p.allIn && p.chips > 0;
+    return !p.folded && !p.allIn && !p.eliminated && p.chips > 0;
   }
 
   private commit(p: Player, amount: number) {
@@ -95,7 +99,7 @@ export class PokerTable {
     let s = from;
     for (let i = 0; i < this.players.length; i++) {
       s = (s + 1) % this.players.length;
-      if (this.players[s].chips > 0) return s;
+      if (this.players[s].chips > 0 && !this.players[s].eliminated) return s;
     }
     return from;
   }
@@ -109,10 +113,36 @@ export class PokerTable {
     return -1;
   }
 
+  private markEliminations() {
+    for (const p of this.players) {
+      if (p.chips <= 0) p.eliminated = true;
+    }
+  }
+
+  private finishMatch(prefix?: string) {
+    this.markEliminations();
+    let winner = this.players.filter((p) => p.chips > 0).sort((a, b) => b.chips - a.chips)[0];
+    if (!winner) winner = [...this.players].sort((a, b) => b.chips - a.chips)[0];
+    this.street = "matchComplete";
+    this.acting = -1;
+    this.matchWinner = winner?.seat ?? -1;
+    const who = winner ? `${winner.name} выигрывает матч!` : "Матч окончен";
+    this.lastLog = prefix ? `${prefix} ${who}` : who;
+  }
+
+  private afterHandSettled() {
+    this.markEliminations();
+    if (this.countChips() < 2) this.finishMatch();
+  }
+
   startHand() {
+    if (this.street === "matchComplete") {
+      this.lastLog = "Матч уже окончен. Начните новую партию.";
+      return;
+    }
+    this.markEliminations();
     if (this.countChips() < 2) {
-      this.street = "handComplete";
-      this.lastLog = "Недостаточно игроков с фишками";
+      this.finishMatch("Недостаточно игроков с фишками.");
       return;
     }
     this.handNumber++;
@@ -126,6 +156,16 @@ export class PokerTable {
     this.acting = -1;
 
     for (const p of this.players) {
+      if (p.eliminated || p.chips <= 0) {
+        p.eliminated = true;
+        p.hole = [];
+        p.betStreet = 0;
+        p.totalBet = 0;
+        p.folded = true;
+        p.allIn = false;
+        p.acted = false;
+        continue;
+      }
       p.hole = [];
       p.betStreet = 0;
       p.totalBet = 0;
@@ -160,7 +200,36 @@ export class PokerTable {
 
     this.street = "preflop";
     this.acting = this.nextCanAct(this.bbSeat);
-    if (this.acting < 0) this.runOut();
+    if (this.acting < 0 || this.players.filter((p) => this.canAct(p)).length <= 1) {
+      if (this.countInHand() <= 1) this.awardUncontested();
+      else this.runOut();
+    }
+  }
+
+  restartMatch(chips?: number) {
+    const stack = chips ?? this.startingChips;
+    for (const p of this.players) {
+      p.chips = stack;
+      p.eliminated = false;
+      p.hole = [];
+      p.betStreet = 0;
+      p.totalBet = 0;
+      p.folded = false;
+      p.allIn = false;
+      p.acted = false;
+    }
+    this.handNumber = 0;
+    this.matchWinner = -1;
+    this.lastPots = [];
+    this.showdownHands = {};
+    this.pot = 0;
+    this.currentBet = 0;
+    this.acting = -1;
+    this.board = [];
+    this.dealer = this.players.length - 1;
+    this.street = "waiting";
+    this.lastLog = "Новая партия";
+    this.startHand();
   }
 
   private postBlind(seat: number, amount: number, label: string) {
@@ -378,6 +447,7 @@ export class PokerTable {
     this.pot = 0;
     this.street = "handComplete";
     this.acting = -1;
+    this.afterHandSettled();
   }
 
   private showdown() {
@@ -394,6 +464,7 @@ export class PokerTable {
     this.lastLog = pot
       ? `Банк ${pot.amount} → [${pot.winners.join(",")}] (${pot.description})`
       : "Вскрытие";
+    this.afterHandSettled();
   }
 
   private distribute(contenders: Player[]) {

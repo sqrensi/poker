@@ -18,6 +18,7 @@ namespace Poker.Presentation
                 case Street.River: return "Ривер";
                 case Street.Showdown: return "Вскрытие";
                 case Street.HandComplete: return "Раздача окончена";
+                case Street.MatchComplete: return "Матч окончен";
                 default: return s.ToString();
             }
         }
@@ -90,7 +91,13 @@ namespace Poker.Presentation
     {
         public static string ForPlayer(Player player, IReadOnlyList<Card> board, Street street)
         {
-            if (player == null || player.HasFolded)
+            if (street == Street.MatchComplete)
+                return player != null && !player.IsEliminated && player.Chips > 0
+                    ? "Матч окончен — вы победили"
+                    : "Матч окончен — вы выбыли";
+            if (player == null || player.IsEliminated || (player.Chips <= 0 && street == Street.HandComplete))
+                return "Вы выбыли из матча (0 фишек)";
+            if (player.HasFolded)
                 return "Вы вне раздачи";
             if (player.HoleCards.Count < 2)
                 return "Ожидание карт…";

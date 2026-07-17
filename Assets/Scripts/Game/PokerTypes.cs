@@ -8,7 +8,9 @@ namespace Poker.Game
         Turn = 3,
         River = 4,
         Showdown = 5,
-        HandComplete = 6
+        HandComplete = 6,
+        /// <summary>Матч окончен: остался один игрок с фишками (или никто).</summary>
+        MatchComplete = 7
     }
 
     public enum ActionType

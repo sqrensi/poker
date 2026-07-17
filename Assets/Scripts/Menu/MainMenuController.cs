@@ -1,23 +1,25 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Poker.Presentation;
+using Poker.Identity;
 
 namespace Poker.Menu
 {
     /// <summary>
-    /// Главное меню: игра с ботами / онлайн (браузер) / выход.
+    /// Главное меню: боты / онлайн (браузер с id+ником) / выход.
     /// </summary>
     public sealed class MainMenuController : MonoBehaviour
     {
         [SerializeField] string onlineUrl = "http://localhost:8787";
 
         Text _status;
+        Text _idLine;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void BootMenu()
         {
-            if (Object.FindObjectOfType<MainMenuController>() != null) return;
-            if (Object.FindObjectOfType<PokerGameController>() != null) return;
+            if (UnityEngine.Object.FindObjectOfType<MainMenuController>() != null) return;
+            if (UnityEngine.Object.FindObjectOfType<PokerGameController>() != null) return;
 
             var go = new GameObject("MainMenu");
             go.AddComponent<MainMenuController>();
@@ -25,6 +27,7 @@ namespace Poker.Menu
 
         void Start()
         {
+            VisualQuality.Apply(Camera.main);
             BuildUi();
         }
 
@@ -36,10 +39,19 @@ namespace Poker.Menu
             canvas.sortingOrder = 50;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.referencePixelsPerUnit = 100f;
+            MobileLayout.ConfigureCanvas(scaler);
             canvasGo.AddComponent<GraphicRaycaster>();
+            MobileLayout.EnsureTouchInput();
 
-            if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+            bool phone = MobileLayout.IsPhoneLike();
+            float btnW = phone ? 420f : 360f;
+            float btnH = phone ? 72f : 64f;
+            float y0 = phone ? 10f : 30f;
+            float gap = phone ? 92f : 80f;
+
+            if (UnityEngine.Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
             {
                 var es = new GameObject("EventSystem");
                 es.AddComponent<UnityEngine.EventSystems.EventSystem>();
@@ -49,15 +61,30 @@ namespace Poker.Menu
             var bg = CreatePanel(canvasGo.transform, Vector2.zero, Vector2.one, new Color(0.05f, 0.08f, 0.07f, 1f));
             Stretch(bg);
 
-            var title = CreateText(canvasGo.transform, "ПОКЕР", new Vector2(0f, 220f), 64, FontStyle.Bold, new Color(1f, 0.9f, 0.4f));
+            var title = CreateText(canvasGo.transform, "ПОКЕР", new Vector2(0f, phone ? 280f : 240f), phone ? 64 : 72, FontStyle.Bold, new Color(1f, 0.9f, 0.4f));
             title.alignment = TextAnchor.MiddleCenter;
 
-            var sub = CreateText(canvasGo.transform, "Texas Hold'em", new Vector2(0f, 150f), 28, FontStyle.Normal, new Color(0.75f, 0.85f, 0.9f));
+            var sub = CreateText(canvasGo.transform, "Texas Hold'em", new Vector2(0f, phone ? 210f : 170f), phone ? 26 : 32, FontStyle.Normal, new Color(0.75f, 0.85f, 0.9f));
             sub.alignment = TextAnchor.MiddleCenter;
 
-            CreateButton(canvasGo.transform, "Играть с ботами (Unity)", new Vector2(0f, 40f), new Color(0.15f, 0.45f, 0.28f), StartBots);
-            CreateButton(canvasGo.transform, "Онлайн в браузере", new Vector2(0f, -40f), new Color(0.15f, 0.35f, 0.55f), StartOnline);
-            CreateButton(canvasGo.transform, "Выход", new Vector2(0f, -120f), new Color(0.35f, 0.18f, 0.18f), () =>
+            string nick = PlayerIdentityService.GetNickname();
+            string pid = PlayerIdentityService.GetOrCreatePlayerId();
+            _idLine = CreateText(canvasGo.transform,
+                $"{nick}  ·  id …{pid.Substring(Mathf.Max(0, pid.Length - 8))}",
+                new Vector2(0f, phone ? 150f : 110f), 20, FontStyle.Normal, new Color(0.7f, 0.78f, 0.72f));
+            _idLine.alignment = TextAnchor.MiddleCenter;
+
+            MainMenuNicknameEditor.Create(canvasGo.transform, () =>
+            {
+                string n = PlayerIdentityService.GetNickname();
+                string id = PlayerIdentityService.GetOrCreatePlayerId();
+                if (_idLine != null)
+                    _idLine.text = $"{n}  ·  id …{id.Substring(Mathf.Max(0, id.Length - 8))}";
+            });
+
+            var b1 = CreateButton(canvasGo.transform, "Играть с ботами (Unity)", new Vector2(0f, y0), new Color(0.15f, 0.45f, 0.28f), StartBots);
+            var b2 = CreateButton(canvasGo.transform, "Онлайн в браузере", new Vector2(0f, y0 - gap), new Color(0.15f, 0.35f, 0.55f), StartOnline);
+            var b3 = CreateButton(canvasGo.transform, "Выход", new Vector2(0f, y0 - gap * 2f), new Color(0.35f, 0.18f, 0.18f), () =>
             {
 #if UNITY_EDITOR
                 UnityEditor.EditorApplication.isPlaying = false;
@@ -65,16 +92,18 @@ namespace Poker.Menu
                 Application.Quit();
 #endif
             });
+            b1.GetComponent<RectTransform>().sizeDelta = new Vector2(btnW, btnH);
+            b2.GetComponent<RectTransform>().sizeDelta = new Vector2(btnW, btnH);
+            b3.GetComponent<RectTransform>().sizeDelta = new Vector2(btnW, btnH);
 
-            _status = CreateText(canvasGo.transform, "", new Vector2(0f, -220f), 20, FontStyle.Normal, new Color(0.85f, 0.75f, 0.45f));
+            _status = CreateText(canvasGo.transform, "", new Vector2(0f, y0 - gap * 3f - 20f), 20, FontStyle.Normal, new Color(0.85f, 0.75f, 0.45f));
             _status.alignment = TextAnchor.MiddleCenter;
             var stRt = _status.GetComponent<RectTransform>();
-            stRt.sizeDelta = new Vector2(900f, 80f);
+            stRt.sizeDelta = new Vector2(phone ? 700f : 920f, 90f);
         }
 
         void StartBots()
         {
-            // Убираем меню и запускаем локальный стол
             foreach (var c in FindObjectsOfType<Canvas>())
             {
                 if (c.gameObject.name == "MenuCanvas")
@@ -87,13 +116,14 @@ namespace Poker.Menu
 
         void StartOnline()
         {
-            Application.OpenURL(onlineUrl);
+            string id = PlayerIdentityService.GetOrCreatePlayerId();
+            string url = $"{onlineUrl.TrimEnd('/')}?pid={System.Uri.EscapeDataString(id)}";
+            Application.OpenURL(url);
             if (_status != null)
                 _status.text =
-                    "Онлайн = игра в браузере.\n" +
-                    "1) cd server && npm start\n" +
-                    "2) Создать стол → скопировать ссылку друзьям\n" +
-                    "3) Хост жмёт «Начать матч»";
+                    "Открыт браузер с вашим ID.\n" +
+                    "Быстрая игра = очередь 2–10 · или комната по ссылке.\n" +
+                    "cd server && npm start";
         }
 
         static Image CreatePanel(Transform parent, Vector2 min, Vector2 max, Color color)
@@ -129,12 +159,12 @@ namespace Poker.Menu
             rt.anchoredPosition = pos;
             rt.sizeDelta = new Vector2(800f, 80f);
             var text = go.AddComponent<Text>();
-            text.font = UiFont.Builtin();
             text.text = content;
             text.fontSize = size;
             text.fontStyle = style;
             text.color = color;
             text.raycastTarget = false;
+            UiFont.MakeCrisp(text, 0.5f);
             return text;
         }
 
@@ -159,12 +189,12 @@ namespace Poker.Menu
             trt.anchorMax = Vector2.one;
             trt.offsetMin = trt.offsetMax = Vector2.zero;
             var text = tGo.AddComponent<Text>();
-            text.font = UiFont.Builtin();
             text.text = label;
-            text.fontSize = 26;
+            text.fontSize = 28;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
+            UiFont.MakeCrisp(text, 0.4f);
             return btn;
         }
     }

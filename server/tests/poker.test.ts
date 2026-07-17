@@ -81,7 +81,7 @@ describe("PokerTable", () => {
     }
     // If both called, force folds later — ensure we can complete a hand
     guard = 0;
-    while (t.street !== "handComplete" && guard++ < 80) {
+    while (t.street !== "handComplete" && t.street !== "matchComplete" && guard++ < 80) {
       const seat = t.acting;
       if (seat < 0) break;
       const legal = t.getLegal(seat);
@@ -91,7 +91,7 @@ describe("PokerTable", () => {
       else if (legal.canFold) t.apply(seat, "fold");
       else t.apply(seat, "allin");
     }
-    expect(t.street).toBe("handComplete");
+    expect(["handComplete", "matchComplete"]).toContain(t.street);
     expect(t.players.reduce((s, p) => s + p.chips, 0)).toBe(2000);
   });
 
@@ -99,7 +99,7 @@ describe("PokerTable", () => {
     const t = new PokerTable(players(4), 5, 10, 99);
     t.startHand();
     let guard = 0;
-    while (t.street !== "handComplete" && guard++ < 120) {
+    while (t.street !== "handComplete" && t.street !== "matchComplete" && guard++ < 120) {
       const seat = t.acting;
       if (seat < 0) break;
       const legal = t.getLegal(seat)!;
@@ -111,6 +111,30 @@ describe("PokerTable", () => {
     }
     const sum = t.players.reduce((s, p) => s + p.chips, 0) + t.pot;
     expect(sum).toBe(4000);
+  });
+
+  it("ends match when only one player has chips", () => {
+    const ps = players(2);
+    ps[0].chips = 30;
+    ps[1].chips = 30;
+    const t = new PokerTable(ps, 5, 10, 3);
+    let hands = 0;
+    while (t.street !== "matchComplete" && hands++ < 40) {
+      if (t.street === "waiting" || t.street === "handComplete") t.startHand();
+      let guard = 0;
+      while (t.street !== "handComplete" && t.street !== "matchComplete" && guard++ < 100) {
+        const seat = t.acting;
+        if (seat < 0) break;
+        t.apply(seat, "allin");
+      }
+    }
+    expect(t.street).toBe("matchComplete");
+    expect(t.matchWinner).toBeGreaterThanOrEqual(0);
+    expect(t.players.filter((p) => p.chips > 0).length).toBe(1);
+    t.restartMatch(100);
+    expect(t.street).toBe("preflop");
+    expect(t.players.every((p) => !p.eliminated)).toBe(true);
+    expect(t.players.reduce((s, p) => s + p.chips, 0) + t.pot).toBe(200);
   });
 });
 

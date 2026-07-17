@@ -34,6 +34,9 @@ namespace Poker.Game
         public int HandNumber { get; private set; }
         public HandResult LastResult { get; private set; }
         public string LastActionLog { get; private set; } = "";
+        /// <summary>Seat of match winner when Street == MatchComplete; otherwise -1.</summary>
+        public int MatchWinnerSeat { get; private set; } = -1;
+        public bool IsMatchOver => Street == Street.MatchComplete;
 
         public bool AwaitingHumanAction =>
             Street >= Street.Preflop && Street <= Street.River &&
@@ -44,30 +47,39 @@ namespace Poker.Game
         readonly List<Player> _players;
         readonly List<Card> _board = new List<Card>(5);
         readonly Deck _deck;
+        readonly int _startingChips;
         int _raiseSize;
 
         public event Action StateChanged;
         public event Action HandEnded;
+        public event Action MatchEnded;
 
         public PokerTable(IEnumerable<Player> players, int smallBlind = 5, int bigBlind = 10, int? deckSeed = null)
         {
             _players = new List<Player>(players);
-            if (_players.Count < 2 || _players.Count > 9)
-                throw new ArgumentException("Need 2–9 players.");
+            if (_players.Count < 2 || _players.Count > 10)
+                throw new ArgumentException("Need 2–10 players.");
             SmallBlind = smallBlind;
             BigBlind = bigBlind;
             _raiseSize = bigBlind;
             _deck = new Deck(deckSeed);
             DealerSeat = _players.Count - 1;
+            _startingChips = _players.Count > 0 ? _players[0].Chips : 1000;
         }
 
         public void StartNewHand()
         {
+            if (Street == Street.MatchComplete)
+            {
+                LastActionLog = "Матч уже окончен. Начните новую партию.";
+                Notify();
+                return;
+            }
+
+            MarkEliminations();
             if (CountWithChips() < 2)
             {
-                Street = Street.HandComplete;
-                LastActionLog = "Недостаточно игроков с фишками.";
-                Notify();
+                FinishMatch("Недостаточно игроков с фишками.");
                 return;
             }
 
@@ -81,7 +93,20 @@ namespace Poker.Game
             ActingSeat = -1;
 
             foreach (var p in _players)
+            {
+                if (p.IsEliminated || p.Chips <= 0)
+                {
+                    p.IsEliminated = true;
+                    p.HoleCards.Clear();
+                    p.BetThisStreet = 0;
+                    p.TotalBetThisHand = 0;
+                    p.HasFolded = true;
+                    p.IsAllIn = false;
+                    p.HasActedThisStreet = false;
+                    continue;
+                }
                 p.ResetForNewHand();
+            }
 
             DealerSeat = NextSeatWithChips(DealerSeat);
             int live = CountWithChips();
@@ -118,13 +143,40 @@ namespace Poker.Game
             Street = Street.Preflop;
             ActingSeat = NextCanAct(BigBlindSeat);
 
-            if (ActingSeat < 0 || OnlyOneCanActAndMatched())
+            // Если все в олл-ине на блайндах — сразу к доске
+            if (ActingSeat < 0 || CountCanAct() <= 1)
             {
-                RunOutToShowdown();
+                if (CountInHand() <= 1)
+                    AwardUncontested();
+                else
+                    RunOutToShowdown();
                 return;
             }
 
             Notify();
+        }
+
+        /// <summary>Сброс фишек и новая партия с теми же игроками.</summary>
+        public void RestartMatch(int? startingChips = null)
+        {
+            int chips = startingChips ?? _startingChips;
+            foreach (var p in _players)
+            {
+                p.Chips = chips;
+                p.IsEliminated = false;
+                p.ResetForNewHand();
+            }
+            HandNumber = 0;
+            MatchWinnerSeat = -1;
+            LastResult = null;
+            Pot = 0;
+            CurrentBet = 0;
+            ActingSeat = -1;
+            _board.Clear();
+            DealerSeat = _players.Count - 1;
+            Street = Street.Waiting;
+            LastActionLog = "Новая партия";
+            StartNewHand();
         }
 
         public LegalActions GetLegalActions(int seat)
@@ -434,6 +486,7 @@ namespace Poker.Game
             Pot = 0;
             Street = Street.HandComplete;
             ActingSeat = -1;
+            AfterHandSettled();
             HandEnded?.Invoke();
         }
 
@@ -461,7 +514,57 @@ namespace Poker.Game
             Street = Street.HandComplete;
             ActingSeat = -1;
             LastActionLog = FormatShowdownLog(result);
+            AfterHandSettled();
             HandEnded?.Invoke();
+            Notify();
+        }
+
+        void AfterHandSettled()
+        {
+            MarkEliminations();
+            if (CountWithChips() < 2)
+                FinishMatch(null);
+        }
+
+        void MarkEliminations()
+        {
+            foreach (var p in _players)
+            {
+                if (p.Chips <= 0)
+                    p.IsEliminated = true;
+            }
+        }
+
+        void FinishMatch(string reasonPrefix)
+        {
+            MarkEliminations();
+            Player winner = null;
+            foreach (var p in _players)
+            {
+                if (p.Chips <= 0) continue;
+                if (winner == null || p.Chips > winner.Chips)
+                    winner = p;
+            }
+
+            // Если все на нуле (редкий сплит) — победитель по имени/индексу с макс. (0)
+            if (winner == null)
+            {
+                foreach (var p in _players)
+                {
+                    if (winner == null || p.Chips > winner.Chips)
+                        winner = p;
+                }
+            }
+
+            Street = Street.MatchComplete;
+            ActingSeat = -1;
+            MatchWinnerSeat = winner != null ? winner.SeatIndex : -1;
+
+            string who = winner != null
+                ? (winner.Type == PlayerType.Human ? "Вы выиграли матч!" : $"{winner.Name} выигрывает матч!")
+                : "Матч окончен";
+            LastActionLog = string.IsNullOrEmpty(reasonPrefix) ? who : $"{reasonPrefix} {who}";
+            MatchEnded?.Invoke();
             Notify();
         }
 
@@ -585,23 +688,8 @@ namespace Poker.Game
             for (int i = 0; i < _players.Count; i++)
             {
                 s = (s + 1) % _players.Count;
-                if (_players[s].Chips > 0 || _players[s].HoleCards.Count > 0 || _players[s].IsAllIn)
-                {
-                    // During hand, folded players with chips still "exist" for dealer only pre-hand
-                    if (_players[s].Chips > 0)
-                        return s;
-                    if (_players[s].HoleCards.Count > 0 && !_players[s].HasFolded)
-                        return s;
-                    if (_players[s].IsAllIn && !_players[s].HasFolded)
-                        return s;
-                }
-            }
-            // Fallback: any with chips
-            s = from;
-            for (int i = 0; i < _players.Count; i++)
-            {
-                s = (s + 1) % _players.Count;
-                if (_players[s].Chips > 0) return s;
+                if (_players[s].Chips > 0 && !_players[s].IsEliminated)
+                    return s;
             }
             return from;
         }

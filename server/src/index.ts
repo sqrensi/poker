@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { RoomManager } from "./net/rooms.js";
 import type { ClientMsg } from "./net/rooms.js";
+import { profiles } from "./profile/store.js";
+import { QUEUE_MAX, QUEUE_MIN } from "./net/queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "..", "public");
@@ -20,7 +22,16 @@ const mime: Record<string, string> = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
 };
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(body));
+}
 
 function sendFile(res: http.ServerResponse, filePath: string) {
   const ext = path.extname(filePath);
@@ -28,11 +39,38 @@ function sendFile(res: http.ServerResponse, filePath: string) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+const rooms = new RoomManager();
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", PUBLIC_BASE);
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    });
+    res.end();
+    return;
+  }
+
   if (url.pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true }));
+    sendJson(res, 200, { ok: true, online: rooms.onlineCount(), queue: rooms.queue.size });
+    return;
+  }
+
+  if (url.pathname === "/api/online") {
+    sendJson(res, 200, {
+      online: rooms.onlineCount(),
+      queue: rooms.queue.snapshot(),
+      minPlayers: QUEUE_MIN,
+      maxPlayers: QUEUE_MAX,
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/leaderboard") {
+    sendJson(res, 200, { entries: profiles.leaderboard(30) });
     return;
   }
 
@@ -47,7 +85,6 @@ const server = http.createServer((req, res) => {
     sendFile(res, filePath);
     return;
   }
-  // SPA fallback for ?room=
   const index = path.join(PUBLIC, "index.html");
   if (fs.existsSync(index)) {
     sendFile(res, index);
@@ -58,22 +95,39 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server });
-const rooms = new RoomManager();
 
 wss.on("connection", (ws) => {
-  const playerId = randomUUID();
-  ws.send(JSON.stringify({ type: "welcome", playerId, publicBase: PUBLIC_BASE }));
+  const sessionId = randomUUID();
+  ws.send(
+    JSON.stringify({
+      type: "welcome",
+      sessionId,
+      publicBase: PUBLIC_BASE,
+      minPlayers: QUEUE_MIN,
+      maxPlayers: QUEUE_MAX,
+    })
+  );
 
   ws.on("message", (raw) => {
     let msg: ClientMsg;
     try {
       msg = JSON.parse(String(raw));
     } catch {
-      ws.send(JSON.stringify({ error: "Неверный JSON" }));
+      ws.send(JSON.stringify({ type: "error", error: "Неверный JSON" }));
       return;
     }
+
+    let playerId = rooms.getPlayerId(ws);
+    if (msg.type !== "auth" && !playerId) {
+      ws.send(JSON.stringify({ type: "error", error: "Сначала отправьте auth" }));
+      return;
+    }
+    if (msg.type === "auth") {
+      playerId = (msg.playerId || `player-${sessionId}`).trim();
+    }
+
     try {
-      const result = rooms.handle(ws, playerId, msg, PUBLIC_BASE) as Record<string, unknown> | undefined;
+      const result = rooms.handle(ws, playerId!, msg, PUBLIC_BASE) as Record<string, unknown> | undefined;
       if (result && "error" in result && result.error) {
         ws.send(JSON.stringify({ type: "error", error: result.error }));
       } else if (result && "type" in result && result.type !== "ok") {
@@ -86,16 +140,21 @@ wss.on("connection", (ws) => {
         if (_broadcast && _room) _room.broadcast();
       }
     } catch (e) {
-      ws.send(JSON.stringify({ type: "error", error: e instanceof Error ? e.message : "Ошибка сервера" }));
+      ws.send(
+        JSON.stringify({ type: "error", error: e instanceof Error ? e.message : "Ошибка сервера" })
+      );
     }
   });
 
   ws.on("close", () => rooms.disconnect(ws));
 });
 
+setInterval(() => rooms.tickQueue(), 1000);
+
 server.listen(PORT, () => {
   console.log(`[poker] http ${PUBLIC_BASE}`);
   console.log(`[poker] ws   ws://localhost:${PORT}`);
+  console.log(`[poker] queue ${QUEUE_MIN}–${QUEUE_MAX} players / table`);
   console.log(`[poker] health ${PUBLIC_BASE}/health`);
 });
 

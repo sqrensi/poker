@@ -77,6 +77,7 @@ namespace Poker.Presentation
                 body.transform.SetParent(layer.transform, false);
                 body.transform.localPosition = new Vector3(0f, ChipBodyH * 0.5f, 0f);
                 body.transform.localScale = new Vector3(0.34f, ChipBodyH * 0.5f, 0.34f);
+                SmoothMesh.ReplacePrimitiveMesh(body, SmoothMesh.Cylinder());
                 Object.Destroy(body.GetComponent<Collider>());
                 body.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(red);
 
@@ -86,6 +87,7 @@ namespace Poker.Presentation
                 stripe.transform.SetParent(layer.transform, false);
                 stripe.transform.localPosition = new Vector3(0f, ChipBodyH + StripeH * 0.5f, 0f);
                 stripe.transform.localScale = new Vector3(0.36f, StripeH * 0.5f, 0.36f);
+                SmoothMesh.ReplacePrimitiveMesh(stripe, SmoothMesh.Cylinder());
                 Object.Destroy(stripe.GetComponent<Collider>());
                 stripe.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(dark);
             }
@@ -100,6 +102,7 @@ namespace Poker.Presentation
             _dealerButton.transform.SetParent(transform, false);
             _dealerButton.transform.localPosition = dealerPos;
             _dealerButton.transform.localScale = new Vector3(0.28f, 0.04f, 0.28f);
+            SmoothMesh.ReplacePrimitiveMesh(_dealerButton, SmoothMesh.Cylinder());
             Object.Destroy(_dealerButton.GetComponent<Collider>());
             _dealerButton.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.95f, 0.92f, 0.2f));
 
@@ -108,14 +111,14 @@ namespace Poker.Presentation
             labelGo.transform.SetParent(_dealerButton.transform, false);
             labelGo.transform.localPosition = new Vector3(0f, 1.2f, 0f);
             labelGo.transform.localRotation = Quaternion.Euler(-90f, 180f, 0f);
-            labelGo.transform.localScale = new Vector3(-0.35f, 0.35f, 0.35f);
+            labelGo.transform.localScale = new Vector3(-0.22f, 0.22f, 0.22f);
             var tm = labelGo.AddComponent<TextMesh>();
             tm.font = UiFont.Builtin();
             tm.text = "D";
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
-            tm.characterSize = 0.45f;
-            tm.fontSize = 64;
+            tm.characterSize = 0.22f;
+            tm.fontSize = 120;
             tm.fontStyle = FontStyle.Bold;
             tm.color = new Color(0.15f, 0.12f, 0.05f);
             var mr = labelGo.GetComponent<MeshRenderer>();
