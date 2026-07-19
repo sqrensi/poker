@@ -5,6 +5,7 @@ import { PokerTable } from "../poker/table.js";
 import type { ActionType, Player } from "../poker/table.js";
 import { profiles, type PlayerProfile } from "../profile/store.js";
 import { MatchQueue, QUEUE_MAX, QUEUE_MIN } from "./queue.js";
+import { decideBot, isBotId } from "./bot.js";
 
 export interface ClientMsg {
   type: string;
@@ -14,6 +15,8 @@ export interface ClientMsg {
   room?: string;
   action?: ActionType;
   amount?: number;
+  publicBase?: string;
+  count?: number;
 }
 
 function roomCode() {
@@ -24,11 +27,12 @@ function roomCode() {
 }
 
 interface SeatConn {
-  ws: WebSocket;
+  ws: WebSocket | null;
   playerId: string;
   seat: number;
   name: string;
   rating: number;
+  isBot: boolean;
 }
 
 export class Room {
@@ -63,24 +67,37 @@ export class Room {
   }
 
   add(
-    ws: WebSocket,
+    ws: WebSocket | null,
     playerId: string,
     name: string,
-    rating = 1000
+    rating = 1000,
+    isBot = false
   ): { ok: true; seat: number } | { ok: false; error: string } {
     if (this.started) return { ok: false, error: "Игра уже началась" };
     if (this.seats.length >= QUEUE_MAX) return { ok: false, error: `Стол полный (макс. ${QUEUE_MAX})` };
     if (this.seats.some((s) => s.playerId === playerId)) return { ok: false, error: "Уже за столом" };
     const seat = this.seats.length;
-    const profile = profiles.ensure(playerId, name);
+    const profile = isBot ? null : profiles.ensure(playerId, name);
     this.seats.push({
       ws,
       playerId,
       seat,
-      name: (name || profile.nickname).slice(0, 24),
-      rating: profile.rating || rating,
+      name: (name || profile?.nickname || "Игрок").slice(0, 24),
+      rating: profile?.rating || rating,
+      isBot,
     });
     return { ok: true, seat };
+  }
+
+  addBot(): { ok: true; name: string } | { ok: false; error: string } {
+    if (this.started) return { ok: false, error: "Игра уже началась" };
+    if (this.seats.length >= QUEUE_MAX) return { ok: false, error: `Стол полный (макс. ${QUEUE_MAX})` };
+    const n = this.seats.filter((s) => s.isBot).length + 1;
+    const id = `bot-${randomUUID().slice(0, 8)}`;
+    const name = `Бот ${n}`;
+    const joined = this.add(null, id, name, 1000, true);
+    if (!joined.ok) return { ok: false, error: joined.error };
+    return { ok: true, name };
   }
 
   removeByWs(ws: WebSocket) {
@@ -90,13 +107,14 @@ export class Room {
       this.seats.splice(idx, 1);
       this.seats.forEach((s, i) => (s.seat = i));
     } else {
-      this.seats[idx].ws = null as unknown as WebSocket;
+      this.seats[idx].ws = null;
     }
   }
 
+  /** Хост может начать в любой момент при ≥2 местах (люди и/или боты). */
   start(): string | null {
     if (this.started) return "Уже запущено";
-    if (this.seats.length < QUEUE_MIN) return `Нужно минимум ${QUEUE_MIN} игрока`;
+    if (this.seats.length < 2) return "Нужно минимум 2 игрока (добавьте друзей или ботов)";
     const players: Player[] = this.seats.map((s) => ({
       seat: s.seat,
       id: s.playerId,
@@ -153,8 +171,9 @@ export class Room {
     if (t.street !== "matchComplete") return;
     const winnerId =
       t.matchWinner >= 0 && t.players[t.matchWinner] ? t.players[t.matchWinner].id : "";
-    if (!winnerId) return;
-    const ids = t.players.map((p) => p.id);
+    if (!winnerId || isBotId(winnerId)) return;
+    const ids = t.players.map((p) => p.id).filter((id) => !isBotId(id));
+    if (ids.length < 2) return;
     profiles.applyMatchResult(ids, winnerId);
     this.ratingApplied = true;
     // refresh seat ratings for UI
@@ -176,13 +195,14 @@ export class Room {
       fromQueue: this.fromQueue,
       you: viewerId,
       lobby: this.seats.map((s) => {
-        const p = profiles.get(s.playerId);
+        const p = s.isBot ? null : profiles.get(s.playerId);
         return {
           seat: s.seat,
           name: s.name,
           id: s.playerId,
           rating: p?.rating ?? s.rating,
-          connected: !!(s.ws && s.ws.readyState === 1),
+          connected: s.isBot || !!(s.ws && s.ws.readyState === 1),
+          isBot: s.isBot,
         };
       }),
       table: t
@@ -226,9 +246,28 @@ export class Room {
 
   broadcast() {
     for (const s of this.seats) {
-      if (!s.ws || s.ws.readyState !== 1) continue;
+      if (s.isBot || !s.ws || s.ws.readyState !== 1) continue;
       s.ws.send(JSON.stringify(this.snapshotFor(s.playerId)));
     }
+  }
+
+  /** Ход бота, если сейчас его очередь. */
+  tryBotAct(): boolean {
+    if (!this.started || !this.table) return false;
+    const seat = this.table.acting;
+    if (seat < 0) return false;
+    const conn = this.seats[seat];
+    if (!conn?.isBot) return false;
+    const d = decideBot(this.table, seat);
+    const ok = this.table.apply(seat, d.action, d.amount ?? 0);
+    if (!ok) {
+      const legal = this.table.getLegal(seat);
+      if (legal?.canCheck) this.table.apply(seat, "check");
+      else if (legal?.canCall) this.table.apply(seat, "call");
+      else if (legal?.canFold) this.table.apply(seat, "fold");
+    }
+    this.maybeApplyRating();
+    return true;
   }
 }
 
@@ -273,6 +312,29 @@ export class RoomManager {
       _broadcast: true,
       _room: room,
     };
+  }
+
+  listOpenRooms() {
+    const list: {
+      code: string;
+      hostName: string;
+      players: number;
+      maxPlayers: number;
+      bots: number;
+    }[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.started) continue;
+      const host = room.seats.find((s) => s.playerId === room.hostId);
+      list.push({
+        code: room.code,
+        hostName: host?.name || "Хост",
+        players: room.seats.length,
+        maxPlayers: QUEUE_MAX,
+        bots: room.seats.filter((s) => s.isBot).length,
+      });
+    }
+    list.sort((a, b) => a.code.localeCompare(b.code));
+    return list;
   }
 
   join(ws: WebSocket, playerId: string, name: string, code: string) {
@@ -403,11 +465,28 @@ export class RoomManager {
       const profile = profiles.ensure(playerId, msg.name);
       return this.join(ws, playerId, profile.nickname, msg.room);
     }
+    if (msg.type === "list_rooms") {
+      return { type: "rooms", rooms: this.listOpenRooms() };
+    }
 
     const code = this.wsRoom.get(ws);
     if (!code) return { error: "Сначала войдите в комнату или встаньте в очередь" };
     const room = this.rooms.get(code);
     if (!room) return { error: "Комната исчезла" };
+
+    if (msg.type === "add_bot") {
+      if (playerId !== room.hostId) return { error: "Только хост может добавить бота" };
+      const n = Math.min(Math.max(1, msg.count ?? 1), QUEUE_MAX - room.size);
+      const added: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const r = room.addBot();
+        if (!r.ok) break;
+        added.push(r.name);
+      }
+      if (!added.length) return { error: "Не удалось добавить бота" };
+      room.broadcast();
+      return { type: "bots_added", names: added, _broadcast: false };
+    }
 
     if (msg.type === "start") {
       if (room.fromQueue) return { error: "Матч из очереди стартует сам" };
@@ -448,6 +527,13 @@ export class RoomManager {
     this.broadcastQueueStatuses();
   }
 
+  tickBots() {
+    for (const room of this.rooms.values()) {
+      if (!room.started) continue;
+      if (room.tryBotAct()) room.broadcast();
+    }
+  }
+
   disconnect(ws: WebSocket) {
     this.queue.removeByWs(ws);
     const code = this.wsRoom.get(ws);
@@ -459,12 +545,13 @@ export class RoomManager {
     const room = this.rooms.get(code);
     if (!room) return;
     room.removeByWs(ws);
-    if (!room.started && room.size === 0) {
+    const humans = room.seats.filter((s) => !s.isBot);
+    if (!room.started && humans.length === 0) {
       this.rooms.delete(code);
       return;
     }
-    if (!room.started && playerId === room.hostId && room.seats.length) {
-      room.hostId = room.seats[0].playerId;
+    if (!room.started && playerId === room.hostId && humans.length) {
+      room.hostId = humans[0].playerId;
     }
     room.broadcast();
   }

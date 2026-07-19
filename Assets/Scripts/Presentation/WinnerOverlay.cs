@@ -54,8 +54,12 @@ namespace Poker.Presentation
             bdRt.offsetMin = Vector2.zero;
             bdRt.offsetMax = Vector2.zero;
             _backdrop = bdGo.AddComponent<Image>();
-            _backdrop.color = new Color(0f, 0f, 0f, 0.55f);
+            _backdrop.color = new Color(0.04f, 0.05f, 0.09f, 0.72f);
             _backdrop.raycastTarget = false;
+            _backdrop.sprite = UiFont.WhiteSprite();
+            _backdrop.type = Image.Type.Simple;
+
+            // Не перехватывать клики — иначе «Новая партия» / «В меню» не нажимаются.
 
             var panelGo = new GameObject("Panel");
             panelGo.transform.SetParent(transform, false);
@@ -63,27 +67,32 @@ namespace Poker.Presentation
             _panelRt.anchorMin = new Vector2(0.5f, 0.5f);
             _panelRt.anchorMax = new Vector2(0.5f, 0.5f);
             _panelRt.pivot = new Vector2(0.5f, 0.5f);
-            _panelRt.sizeDelta = new Vector2(720f, 220f);
+            _panelRt.sizeDelta = new Vector2(680f, 210f);
             _panel = panelGo.AddComponent<Image>();
-            _panel.color = new Color(0.12f, 0.14f, 0.18f, 0.96f);
+            _panel.color = UiTheme.GlassStrong;
             _panel.raycastTarget = false;
+            UiTheme.ApplyRounded(_panel);
+            var edge = panelGo.AddComponent<Outline>();
+            edge.effectColor = new Color(UiTheme.Cyan.r, UiTheme.Cyan.g, UiTheme.Cyan.b, 0.45f);
+            edge.effectDistance = new Vector2(1.5f, -1.5f);
 
             var accent = new GameObject("Accent");
             accent.transform.SetParent(panelGo.transform, false);
             var aRt = accent.AddComponent<RectTransform>();
-            aRt.anchorMin = new Vector2(0f, 1f);
-            aRt.anchorMax = new Vector2(1f, 1f);
+            aRt.anchorMin = new Vector2(0.5f, 1f);
+            aRt.anchorMax = new Vector2(0.5f, 1f);
             aRt.pivot = new Vector2(0.5f, 1f);
-            aRt.sizeDelta = new Vector2(0f, 8f);
-            aRt.anchoredPosition = Vector2.zero;
+            aRt.sizeDelta = new Vector2(120f, 6f);
+            aRt.anchoredPosition = new Vector2(0f, -16f);
             var aImg = accent.AddComponent<Image>();
-            aImg.color = new Color(1f, 0.82f, 0.2f, 1f);
+            aImg.color = UiTheme.Coral;
             aImg.raycastTarget = false;
+            UiTheme.ApplyPill(aImg);
 
-            _title = CreateCenteredText(panelGo.transform, "Title", new Vector2(0f, 28f), 46, FontStyle.Bold,
-                new Color(1f, 0.92f, 0.45f));
-            _subtitle = CreateCenteredText(panelGo.transform, "Subtitle", new Vector2(0f, -40f), 26, FontStyle.Normal,
-                new Color(0.9f, 0.92f, 0.95f));
+            _title = CreateCenteredText(panelGo.transform, "Title", new Vector2(0f, 22f), 42, FontStyle.Bold,
+                UiTheme.TextMain);
+            _subtitle = CreateCenteredText(panelGo.transform, "Subtitle", new Vector2(0f, -42f), 24, FontStyle.Normal,
+                UiTheme.Cyan);
         }
 
         static Text CreateCenteredText(Transform parent, string name, Vector2 pos, int size, FontStyle style, Color color)
@@ -224,7 +233,9 @@ namespace Poker.Presentation
         IEnumerator Animate(bool autoHide)
         {
             _group.alpha = 0f;
-            _group.blocksRaycasts = !autoHide;
+            // Всегда пропускаем клики к кнопкам под баннером.
+            _group.blocksRaycasts = false;
+            _group.interactable = false;
             _panelRt.localScale = Vector3.one * 0.82f;
 
             float t = 0f;

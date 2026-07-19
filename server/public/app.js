@@ -11,10 +11,10 @@ const state = {
   room: null,
   isHost: false,
   last: null,
-  queueing: false,
-  minPlayers: 2,
+  view: "home",
   maxPlayers: 10,
   nickDirty: false,
+  roomsTimer: null,
 };
 
 function wsUrl() {
@@ -43,27 +43,31 @@ function send(msg) {
   if (state.ws?.readyState === 1) state.ws.send(JSON.stringify(msg));
 }
 
-function showInvite(code) {
-  const link = `${location.origin}/?room=${code}`;
-  $("inviteLink").value = link;
-  $("roomCodeShow").textContent = code;
-  history.replaceState({}, "", `/?room=${code}`);
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function updateChip() {
   $("chipNick").textContent = state.nickname || "Игрок";
   $("chipRating").textContent = String(state.rating ?? 1000);
-  $("chipIdShort").textContent = (state.playerId || "").slice(-8);
 }
 
 function setView(view) {
-  $("home").classList.toggle("hidden", view !== "home");
-  $("queueing").classList.toggle("hidden", view !== "queueing");
-  $("waiting").classList.toggle("hidden", view !== "waiting");
-  $("table").classList.toggle("hidden", view !== "table");
+  state.view = view;
+  const views = ["home", "onlineHub", "rooms", "waiting", "table"];
+  for (const v of views) {
+    const el = $(v);
+    if (el) el.classList.toggle("hidden", v !== view);
+  }
   document.body.classList.toggle("in-table", view === "table");
+
+  if (view === "rooms") startRoomsPoll();
+  else stopRoomsPoll();
+
   if (view === "table") {
-    // На телефоне прокрутить к доске / своим картам
     requestAnimationFrame(() => {
       const hole = $("hole");
       if (hole && window.matchMedia("(max-width: 720px)").matches) {
@@ -73,63 +77,70 @@ function setView(view) {
   }
 }
 
+function startRoomsPoll() {
+  stopRoomsPoll();
+  refreshRooms();
+  state.roomsTimer = setInterval(refreshRooms, 2500);
+}
+
+function stopRoomsPoll() {
+  if (state.roomsTimer) {
+    clearInterval(state.roomsTimer);
+    state.roomsTimer = null;
+  }
+}
+
+function refreshRooms() {
+  send({ type: "list_rooms" });
+}
+
+function renderRoomList(rooms) {
+  const list = $("roomList");
+  list.innerHTML = "";
+  if (!rooms?.length) {
+    list.innerHTML = `<div class="room-empty">Пока нет открытых комнат.<br>Создайте свою или зайдите по коду.</div>`;
+    return;
+  }
+  for (const r of rooms) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "room-card";
+    row.innerHTML = `
+      <div class="room-card-main">
+        <span class="room-code">${escapeHtml(r.code)}</span>
+        <span class="room-host">хост · ${escapeHtml(r.hostName)}</span>
+      </div>
+      <div class="room-card-meta">
+        <span>${r.players}/${r.maxPlayers}</span>
+        ${r.bots ? `<span class="bot-tag">${r.bots} бот</span>` : ""}
+        <span class="join-label">Войти →</span>
+      </div>`;
+    row.onclick = () => {
+      $("roomsErr").textContent = "";
+      send({ type: "join", room: r.code, name: state.nickname || "Игрок" });
+    };
+    list.appendChild(row);
+  }
+}
+
 function connect() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl());
     state.ws = ws;
     ws.onopen = () => resolve();
-    ws.onerror = () => reject(new Error("Не удалось подключиться. Запущен ли npm start?"));
+    ws.onerror = () => reject(new Error("Не удалось подключиться к серверу"));
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
       const err = $("lobbyErr");
-      if (err) err.textContent = "Соединение закрыто. Обновите страницу.";
+      if (err && state.view !== "table") err.textContent = "Соединение закрыто. Обновите страницу.";
     };
   });
 }
 
-async function refreshOnline() {
-  try {
-    const r = await fetch("/api/online");
-    const j = await r.json();
-    $("onlineCount").textContent = String(j.online ?? 0);
-    $("queueCount").textContent = String(j.queue?.queueSize ?? 0);
-  } catch {
-    /* ignore */
-  }
-}
-
-async function refreshLeaderboard() {
-  try {
-    const r = await fetch("/api/leaderboard");
-    const j = await r.json();
-    const ol = $("leaderboard");
-    ol.innerHTML = "";
-    (j.entries || []).slice(0, 12).forEach((e, i) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span class="rank">${i + 1}</span><span class="nm">${escapeHtml(
-        e.nickname
-      )}</span><span class="rt">${e.rating}</span>`;
-      ol.appendChild(li);
-    });
-    if (!(j.entries || []).length) {
-      ol.innerHTML = `<li><span class="nm">Пока пусто — сыграйте матч</span></li>`;
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 function onMessage(msg) {
   if (msg.type === "welcome") {
-    state.minPlayers = msg.minPlayers ?? 2;
     state.maxPlayers = msg.maxPlayers ?? 10;
+    if ($("maxSeats")) $("maxSeats").textContent = String(state.maxPlayers);
     const nick = localStorage.getItem(LS_NICK) || $("name").value || "";
     send({ type: "auth", playerId: state.playerId, nickname: nick });
     return;
@@ -150,10 +161,7 @@ function onMessage(msg) {
       state.nickDirty = false;
     }
     updateChip();
-    refreshLeaderboard();
-    refreshOnline();
 
-    // Auto-join room from URL after auth
     const params = new URLSearchParams(location.search);
     const roomFromUrl = (params.get("room") || "").toUpperCase();
     if (roomFromUrl && !state.room) {
@@ -163,65 +171,35 @@ function onMessage(msg) {
   }
 
   if (msg.type === "error") {
-    $("lobbyErr").textContent = msg.error || "Ошибка";
-    $("nickHint").textContent = msg.error || "";
+    const target =
+      state.view === "rooms" ? $("roomsErr") : $("lobbyErr") || $("roomsErr") || $("startHint");
+    if (target) target.textContent = msg.error || "Ошибка";
+    if ($("nickHint") && msg.error) $("nickHint").textContent = msg.error;
     return;
   }
 
-  if (msg.type === "queue_status") {
-    state.queueing = true;
-    setView("queueing");
-    $("btnQueue").classList.add("hidden");
-    $("btnDequeue").classList.remove("hidden");
-    $("queueStatus").textContent = `Место в очереди: ${msg.position} · в поиске: ${msg.queueSize} · ждём ${msg.waitedSec}с (стол ${msg.minPlayers}–${msg.maxPlayers})`;
-    $("queueCount").textContent = String(msg.queueSize ?? 0);
-    return;
-  }
-
-  if (msg.type === "queue_left") {
-    state.queueing = false;
-    setView("home");
-    $("btnQueue").classList.remove("hidden");
-    $("btnDequeue").classList.add("hidden");
-    $("queueHint").textContent = "Поиск отменён.";
-    refreshOnline();
-    return;
-  }
-
-  if (msg.type === "matched") {
-    state.queueing = false;
-    $("btnQueue").classList.remove("hidden");
-    $("btnDequeue").classList.add("hidden");
-    $("lobbyErr").textContent = `Стол найден · ${msg.players} игроков`;
+  if (msg.type === "rooms") {
+    renderRoomList(msg.rooms || []);
     return;
   }
 
   if (msg.type === "created" || msg.type === "joined") {
     state.room = msg.code;
     state.isHost = msg.type === "created";
-    state.queueing = false;
-    showInvite(msg.code);
+    history.replaceState({}, "", `/?room=${msg.code}`);
+    $("roomCodeShow").textContent = msg.code;
     setView("waiting");
     if (state.isHost) {
-      $("waitingTitle").textContent = "Вы хост — ждите игроков";
-      $("waitingHint").textContent = "Скопируйте ссылку друзьям. Когда зайдут — «Начать матч».";
+      $("waitingTitle").textContent = "Вы хост";
+      $("waitingHint").textContent = "Добавьте ботов или дождитесь игроков — начать можно в любой момент.";
     } else {
       $("waitingTitle").textContent = "Вы в комнате";
-      $("waitingHint").textContent = "Дождитесь, пока хост начнёт матч.";
+      $("waitingHint").textContent = "Ждём, пока хост начнёт игру.";
     }
     return;
   }
 
-  if (msg.type === "leaderboard") {
-    const ol = $("leaderboard");
-    ol.innerHTML = "";
-    (msg.entries || []).forEach((e, i) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span class="rank">${i + 1}</span><span class="nm">${escapeHtml(
-        e.nickname
-      )}</span><span class="rt">${e.rating}</span>`;
-      ol.appendChild(li);
-    });
+  if (msg.type === "bots_added") {
     return;
   }
 
@@ -258,41 +236,50 @@ function cardEl(code) {
 
 function render(msg) {
   if ($("lobbyErr")) $("lobbyErr").textContent = "";
+  if ($("roomsErr")) $("roomsErr").textContent = "";
 
   if (!msg.started || !msg.table) {
     setView("waiting");
-    showInvite(msg.code);
+    $("roomCodeShow").textContent = msg.code;
 
     const list = $("lobbyList");
     list.innerHTML = "";
     msg.lobby.forEach((p) => {
       const row = document.createElement("div");
+      row.className = "lobby-row" + (p.isBot ? " is-bot" : "");
       const tags = [];
       if (p.id === msg.hostId) tags.push("хост");
       if (p.id === state.playerId) tags.push("вы");
+      if (p.isBot) tags.push("бот");
       if (!p.connected) tags.push("оффлайн");
       row.innerHTML = `<span><strong>${escapeHtml(p.name)}</strong>${
-        tags.length ? " · " + tags.join(" · ") : ""
-      }</span><span class="rating">${p.rating ?? "—"}</span>`;
+        tags.length ? `<em>${tags.join(" · ")}</em>` : ""
+      }</span><span class="rating">${p.isBot ? "—" : p.rating ?? "—"}</span>`;
       list.appendChild(row);
     });
     $("playerCount").textContent = String(msg.lobby.length);
 
+    const humans = msg.lobby.filter((p) => !p.isBot).length;
+    const bots = msg.lobby.filter((p) => p.isBot).length;
+    const canStart = state.isHost && msg.lobby.length >= 2 && !msg.fromQueue;
+    const canAddBot = state.isHost && !msg.fromQueue && msg.lobby.length < state.maxPlayers;
+
+    $("btnStart").classList.toggle("hidden", !canStart);
+    $("btnAddBot").classList.toggle("hidden", !canAddBot);
+
     if (msg.fromQueue) {
-      $("btnStart").classList.add("hidden");
-      $("startHint").textContent = "Стол из очереди — старт автоматический…";
-      $("waitingTitle").textContent = "Стол собран";
-    } else {
-      const canStart = state.isHost && msg.lobby.length >= 2;
-      $("btnStart").classList.toggle("hidden", !canStart);
-      if (state.isHost) {
-        $("startHint").textContent = canStart
-          ? "Все на месте — можно начинать."
-          : "Нужен хотя бы ещё один игрок по ссылке.";
+      $("startHint").textContent = "Стол собран — старт…";
+    } else if (state.isHost) {
+      if (msg.lobby.length < 2) {
+        $("startHint").textContent = "Нужен ещё игрок или бот.";
       } else {
-        $("startHint").textContent = "Ждём хоста…";
-        $("btnStart").classList.add("hidden");
+        $("startHint").textContent =
+          bots || humans > 1
+            ? "Можно начинать. Ботов можно добавить ещё."
+            : "Можно начинать.";
       }
+    } else {
+      $("startHint").textContent = "Ждём хоста…";
     }
     return;
   }
@@ -356,30 +343,55 @@ function render(msg) {
         ev.preventDefault();
         fn();
       };
-      // Крупные зоны нажатия на тач
       b.style.touchAction = "manipulation";
       actions.appendChild(b);
     };
     if (legal.canFold) add("Фолд", () => send({ type: "action", action: "fold" }), "danger");
     if (legal.canCheck) add("Чек", () => send({ type: "action", action: "check" }));
     if (legal.canCall) add(`Колл ${legal.callAmount}`, () => send({ type: "action", action: "call" }));
-    if (legal.canBet)
-      add(`Бет ${legal.minRaiseTo}`, () => send({ type: "action", action: "bet", amount: legal.minRaiseTo }), "primary");
-    if (legal.canRaise)
-      add(
-        `Рейз ${legal.minRaiseTo}`,
-        () => send({ type: "action", action: "raise", amount: legal.minRaiseTo }),
-        "primary"
-      );
+
+    if (legal.canBet || legal.canRaise) {
+      const wrap = document.createElement("div");
+      wrap.className = "raise-slider";
+      const min = legal.minRaiseTo;
+      const max = Math.max(min, legal.maxRaiseTo);
+      const label = document.createElement("div");
+      label.className = "raise-slider-label";
+      const range = document.createElement("input");
+      range.type = "range";
+      range.min = String(min);
+      range.max = String(max);
+      range.step = "1";
+      range.value = String(min);
+      const sync = () => {
+        const v = Number(range.value);
+        const atMax = v >= max;
+        label.textContent = atMax
+          ? `Олл-ин · ${v}`
+          : legal.canBet
+            ? `Бет · ${v}`
+            : `Рейз до · ${v}`;
+      };
+      sync();
+      range.oninput = sync;
+      wrap.appendChild(label);
+      wrap.appendChild(range);
+      actions.appendChild(wrap);
+
+      add(legal.canBet ? "Бет" : "Рейз", () => {
+        const amount = Number(range.value);
+        send({
+          type: "action",
+          action: legal.canBet ? "bet" : "raise",
+          amount,
+        });
+      }, "primary");
+    }
     add("Олл-ин", () => send({ type: "action", action: "allin" }), "danger");
   }
 
   const matchOver = t.street === "matchComplete";
-  $("btnNext").classList.toggle("hidden", !(state.isHost && t.street === "handComplete" && !msg.fromQueue));
-  // Host of queue table can still advance hands
-  if (msg.fromQueue && state.isHost && t.street === "handComplete") {
-    $("btnNext").classList.remove("hidden");
-  }
+  $("btnNext").classList.toggle("hidden", !(state.isHost && t.street === "handComplete"));
   $("btnRematch").classList.toggle("hidden", !(state.isHost && matchOver));
 
   const banner = $("matchBanner");
@@ -388,10 +400,9 @@ function render(msg) {
     const w = t.players.find((p) => p.seat === t.matchWinner);
     banner.textContent = w
       ? w.id === state.playerId
-        ? `Матч окончен — вы победили! Рейтинг обновлён.`
+        ? `Матч окончен — вы победили!`
         : `Матч окончен — победитель: ${w.name}`
       : t.lastLog || "Матч окончен";
-    refreshLeaderboard();
   } else {
     banner.classList.add("hidden");
   }
@@ -400,7 +411,6 @@ function render(msg) {
 function updateOrientationGate() {
   const gate = $("rotateGate");
   if (!gate) return;
-  // height > width надёжнее matchMedia на части Android-браузеров
   const w = window.innerWidth;
   const h = window.innerHeight;
   const portrait = h > w;
@@ -412,11 +422,9 @@ function updateOrientationGate() {
 
 async function lockLandscape() {
   try {
-    if (screen.orientation && screen.orientation.lock) {
-      await screen.orientation.lock("landscape");
-    }
+    if (screen.orientation?.lock) await screen.orientation.lock("landscape");
   } catch {
-    /* браузер может запретить без fullscreen — CSS-заглушка останется */
+    /* ignore */
   }
 }
 
@@ -433,8 +441,7 @@ async function boot() {
   const roomFromUrl = (params.get("room") || "").toUpperCase();
   if (roomFromUrl) $("roomCode").value = roomFromUrl;
 
-  // Меню видно сразу, даже если WS ещё не поднялся
-  setView("home");
+  setView(roomFromUrl ? "home" : "home");
 
   try {
     await connect();
@@ -456,45 +463,40 @@ async function boot() {
     send({ type: "set_nickname", nickname: $("name").value });
   };
 
-  $("btnQueue").onclick = () => {
+  $("btnGoOnline").onclick = () => {
     $("lobbyErr").textContent = "";
-    send({ type: "queue", nickname: $("name").value });
+    setView("onlineHub");
   };
-  const cancelQ = () => send({ type: "dequeue" });
-  $("btnDequeue").onclick = cancelQ;
-  $("btnDequeue2").onclick = cancelQ;
+
+  $("btnBackHome").onclick = () => setView("home");
+  $("btnBackHub").onclick = () => setView("onlineHub");
 
   $("btnCreate").onclick = () => {
     $("lobbyErr").textContent = "";
-    send({ type: "create", name: $("name").value || "Хост" });
+    send({ type: "create", name: $("name").value || "Хост", publicBase: location.origin });
   };
+
+  $("btnConnect").onclick = () => {
+    $("roomsErr").textContent = "";
+    setView("rooms");
+  };
+
+  $("btnRefreshRooms").onclick = () => refreshRooms();
+
   $("btnJoin").onclick = () => {
-    $("lobbyErr").textContent = "";
+    $("roomsErr").textContent = "";
     const code = ($("roomCode").value || "").trim().toUpperCase();
     if (!code) {
-      $("lobbyErr").textContent = "Введите код комнаты";
+      $("roomsErr").textContent = "Введите код комнаты";
       return;
     }
     send({ type: "join", room: code, name: $("name").value || "Игрок" });
   };
+
+  $("btnAddBot").onclick = () => send({ type: "add_bot", count: 1 });
   $("btnStart").onclick = () => send({ type: "start" });
   $("btnNext").onclick = () => send({ type: "next" });
   $("btnRematch").onclick = () => send({ type: "rematch" });
-  $("btnCopy").onclick = async () => {
-    const link = $("inviteLink").value;
-    try {
-      await navigator.clipboard.writeText(link);
-      $("btnCopy").textContent = "Скопировано!";
-      setTimeout(() => ($("btnCopy").textContent = "Копировать"), 1500);
-    } catch {
-      $("inviteLink").select();
-      $("lobbyErr").textContent = "Скопируйте ссылку вручную (Ctrl+C)";
-    }
-  };
-
-  setInterval(refreshOnline, 4000);
-  refreshOnline();
-  refreshLeaderboard();
 }
 
 boot().catch((e) => {

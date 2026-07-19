@@ -198,7 +198,7 @@ namespace Poker.Game
             {
                 int minBet = Min(BigBlind, maxRaiseTo);
                 return new LegalActions(
-                    canFold: false,
+                    canFold: true,
                     canCheck: true,
                     canCall: false,
                     callAmount: 0,
@@ -247,7 +247,7 @@ namespace Poker.Game
             switch (action.Type)
             {
                 case ActionType.Fold:
-                    if (legal.CanCheck) return false;
+                    // Фолд разрешён всегда, когда игрок может действовать (в т.ч. вместо чека).
                     p.HasFolded = true;
                     p.HasActedThisStreet = true;
                     LastActionLog = $"{p.Name}: фолд";

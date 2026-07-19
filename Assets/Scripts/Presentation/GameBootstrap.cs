@@ -2,10 +2,7 @@ using UnityEngine;
 
 namespace Poker.Presentation
 {
-    /// <summary>
-    /// Больше не автозапускает стол — меню стартует через MainMenuController.
-    /// Оставлен для ручного добавления PokerGameController на сцену.
-    /// </summary>
+    /// <summary>Устарело: старт через SoftBootstrap → меню → PokerGameController.</summary>
     public sealed class GameBootstrap : MonoBehaviour
     {
     }

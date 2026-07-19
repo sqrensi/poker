@@ -14,16 +14,26 @@ namespace Poker.Presentation
             if (!_applied)
             {
                 _applied = true;
-                // Prefer highest quality tier that exists.
-                int ultra = QualitySettings.names.Length - 1;
-                if (ultra >= 0)
-                    QualitySettings.SetQualityLevel(ultra, true);
+                bool mobile = Application.isMobilePlatform;
 
-                QualitySettings.antiAliasing = Application.isMobilePlatform ? 2 : 8;
+                if (!mobile)
+                {
+                    int ultra = QualitySettings.names.Length - 1;
+                    if (ultra >= 0)
+                        QualitySettings.SetQualityLevel(ultra, true);
+                }
+                else if (QualitySettings.names.Length > 0)
+                {
+                    // На телефоне — средний/низкий пресет, не Ultra
+                    int mid = Mathf.Clamp(QualitySettings.names.Length / 2, 0, QualitySettings.names.Length - 1);
+                    QualitySettings.SetQualityLevel(mid, true);
+                }
+
+                QualitySettings.antiAliasing = mobile ? 2 : 8;
                 QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
-                QualitySettings.softParticles = true;
-                QualitySettings.shadows = ShadowQuality.All;
-                QualitySettings.shadowResolution = ShadowResolution.High;
+                QualitySettings.softParticles = !mobile;
+                QualitySettings.shadows = mobile ? ShadowQuality.Disable : ShadowQuality.All;
+                QualitySettings.shadowResolution = mobile ? ShadowResolution.Low : ShadowResolution.High;
             }
 
             if (cam == null)
@@ -31,7 +41,7 @@ namespace Poker.Presentation
             if (cam == null) return;
 
             cam.allowMSAA = true;
-            cam.allowHDR = true;
+            cam.allowHDR = !Application.isMobilePlatform;
             cam.depthTextureMode = DepthTextureMode.None;
         }
     }

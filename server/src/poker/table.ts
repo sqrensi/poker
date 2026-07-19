@@ -248,7 +248,7 @@ export class PokerTable {
     if (this.currentBet === 0) {
       const minBet = Math.min(this.bb, maxRaiseTo);
       return {
-        canFold: false,
+        canFold: true,
         canCheck: true,
         canCall: false,
         callAmount: 0,
@@ -285,7 +285,6 @@ export class PokerTable {
     if (!legal) return false;
 
     if (type === "fold") {
-      if (legal.canCheck) return false;
       p.folded = true;
       p.acted = true;
       this.lastLog = `${p.name}: фолд`;

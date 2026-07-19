@@ -17,11 +17,19 @@ namespace Poker.Presentation
         public static void ConfigureCanvas(CanvasScaler scaler)
         {
             if (scaler == null) return;
-            // Всегда ландшафтный референс — вертикаль на телефоне отключена
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
+            // Меньший reference на телефоне → крупнее весь UI в ландшафте
+            if (IsPhoneLike())
+            {
+                scaler.referenceResolution = new Vector2(1400f, 788f);
+                scaler.matchWidthOrHeight = 0.35f;
+            }
+            else
+            {
+                scaler.referenceResolution = new Vector2(1920f, 1080f);
+                scaler.matchWidthOrHeight = 0.5f;
+            }
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = IsPhoneLike() ? 0.55f : 0.5f;
         }
 
         public static void EnsureTouchInput()

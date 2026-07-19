@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,31 +14,37 @@ namespace Poker.Presentation
         [SerializeField] int startingChips = 1000;
         [SerializeField] int smallBlind = 5;
         [SerializeField] int bigBlind = 10;
-        [SerializeField] float aiDelaySeconds = 0.7f;
+        [SerializeField] float aiDelaySeconds = 0.55f;
         [SerializeField] int raiseMultiplier = 3;
 
         PokerTable _table;
         readonly List<SeatView> _seats = new List<SeatView>();
         readonly List<CardView> _boardCards = new List<CardView>();
         readonly Dictionary<int, List<CardView>> _holeCards = new Dictionary<int, List<CardView>>();
-        readonly List<Text> _seatUiLines = new List<Text>();
-        readonly List<Image> _seatUiRows = new List<Image>();
+        readonly List<RectTransform> _seatLabelRts = new List<RectTransform>();
+        readonly List<Text> _seatNameLabels = new List<Text>();
+        readonly List<Text> _seatChipLabels = new List<Text>();
 
         Text _hudTitle;
         Text _hudDetail;
         Text _logText;
         Text _potText;
         Text _hintText;
-        Text _rosterTitle;
         Image _hintPanel;
         Button _foldBtn;
         Button _checkCallBtn;
         Button _betRaiseBtn;
+        Button _raiseConfirmBtn;
+        Button _raiseCancelBtn;
         Button _nextHandBtn;
         Button _rematchBtn;
         Button _menuBtn;
         Button _hintsToggleBtn;
         Text _hintsToggleLabel;
+        GameObject _raisePanel;
+        Slider _raiseSlider;
+        Text _raiseAmountLabel;
+        bool _raiseMode;
         float _aiTimer;
         bool _aiPending;
         bool _hintsEnabled = true;
@@ -45,16 +52,53 @@ namespace Poker.Presentation
         TurnArrow _turnArrow;
         Transform _tableRoot;
         WinnerOverlay _winnerOverlay;
-        Transform _canvasRoot;
+        RectTransform _canvasRoot;
 
         void Start()
         {
             _hintsEnabled = PlayerPrefs.GetInt(HintsPrefsKey, 1) == 1;
-            CardSpriteCatalog.EnsureLoaded();
-            Debug.Log("[Poker] Smoke: " + Poker.Tests.HandEvaluatorSmoke.RunSmoke());
-            BuildWorld();
-            VisualQuality.Apply(_cam);
-            BuildUi();
+            StartCoroutine(SoftStart());
+        }
+
+        IEnumerator SoftStart()
+        {
+            // 1) UI сразу — без стола
+            try
+            {
+                BuildUi();
+                if (_hudTitle != null) _hudTitle.text = "Загрузка стола…";
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+                yield break;
+            }
+
+            yield return null;
+
+            string matErr = PokerMaterials.WarmUp();
+            if (matErr != null)
+            {
+                if (_hudTitle != null) _hudTitle.text = "Ошибка материалов: " + matErr;
+                yield break;
+            }
+
+            yield return null;
+
+            try
+            {
+                CardSpriteCatalog.EnsureLoaded();
+                BuildWorld();
+                VisualQuality.Apply(_cam);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+                if (_hudTitle != null) _hudTitle.text = "Ошибка сцены: " + e.Message;
+                yield break;
+            }
+
+            yield return null;
             StartMatch();
         }
 
@@ -64,10 +108,19 @@ namespace Poker.Presentation
 
             if (_table.Street == Street.MatchComplete)
             {
+                ExitRaiseMode();
                 SetActionButtons(false);
-                _nextHandBtn.gameObject.SetActive(false);
-                if (_rematchBtn != null) _rematchBtn.gameObject.SetActive(true);
-                if (_menuBtn != null) _menuBtn.gameObject.SetActive(true);
+                if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
+                if (_rematchBtn != null)
+                {
+                    _rematchBtn.gameObject.SetActive(true);
+                    _rematchBtn.transform.SetAsLastSibling();
+                }
+                if (_menuBtn != null)
+                {
+                    _menuBtn.gameObject.SetActive(true);
+                    _menuBtn.transform.SetAsLastSibling();
+                }
                 return;
             }
 
@@ -76,12 +129,13 @@ namespace Poker.Presentation
 
             if (_table.Street == Street.HandComplete)
             {
+                ExitRaiseMode();
                 SetActionButtons(false);
-                _nextHandBtn.gameObject.SetActive(true);
+                if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(true);
                 return;
             }
 
-            _nextHandBtn.gameObject.SetActive(false);
+            if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
 
             if (_table.AwaitingHumanAction)
             {
@@ -90,6 +144,7 @@ namespace Poker.Presentation
                 return;
             }
 
+            ExitRaiseMode();
             SetActionButtons(false);
 
             if (_table.ActingSeat >= 0 &&
@@ -177,7 +232,7 @@ namespace Poker.Presentation
             felt.transform.SetParent(tableRoot, false);
             felt.transform.localScale = new Vector3(14.5f, 0.14f, 9.0f);
             SmoothMesh.ReplacePrimitiveMesh(felt, SmoothMesh.Cylinder());
-            felt.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.06f, 0.42f, 0.22f));
+            PokerMaterials.ApplyColor(felt.GetComponent<MeshRenderer>(), new Color(0.06f, 0.42f, 0.22f));
 
             var rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             rim.name = "Rim";
@@ -185,7 +240,7 @@ namespace Poker.Presentation
             rim.transform.localScale = new Vector3(15.3f, 0.12f, 9.7f);
             rim.transform.position = new Vector3(0f, -0.04f, 0f);
             SmoothMesh.ReplacePrimitiveMesh(rim, SmoothMesh.Cylinder());
-            rim.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.28f, 0.14f, 0.07f));
+            PokerMaterials.ApplyColor(rim.GetComponent<MeshRenderer>(), new Color(0.28f, 0.14f, 0.07f));
             Object.Destroy(rim.GetComponent<Collider>());
 
             _turnArrow = TurnArrow.Create(tableRoot);
@@ -213,10 +268,28 @@ namespace Poker.Presentation
                 var seat = SeatView.Create(tableRoot, i, pos, angle);
                 _seats.Add(seat);
 
+                // Боковые места: карты повёрнуты на 90° в плоскости стола.
+                bool side = Mathf.Abs(Mathf.Cos(rad)) > Mathf.Abs(Mathf.Sin(rad));
+                float cardYaw = 0f;
+                Vector3 o0 = new Vector3(-0.58f, 0.04f, 0f);
+                Vector3 o1 = new Vector3(0.58f, 0.05f, 0f);
+                if (side)
+                {
+                    // Справа (cos>0) и слева (cos<0) — перпендикулярно к нижним/верхним.
+                    cardYaw = Mathf.Cos(rad) > 0f ? 90f : -90f;
+                    o0 = new Vector3(0f, 0.04f, -0.58f);
+                    o1 = new Vector3(0f, 0.05f, 0.58f);
+                }
+                else if (Mathf.Sin(rad) > 0.5f)
+                {
+                    // Верхний игрок — карты «к центру», разворот на 180°.
+                    cardYaw = 180f;
+                }
+
                 var holes = new List<CardView>();
                 int baseOrder = 40 + i * 5;
-                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(-0.58f, 0.04f, 0f), 0f, 1.0f, baseOrder));
-                holes.Add(CardView.Create(seat.CardAnchor, new Vector3(0.58f, 0.05f, 0f), 0f, 1.0f, baseOrder + 1));
+                holes.Add(CardView.Create(seat.CardAnchor, o0, cardYaw, 1.0f, baseOrder));
+                holes.Add(CardView.Create(seat.CardAnchor, o1, cardYaw, 1.0f, baseOrder + 1));
                 _holeCards[i] = holes;
             }
         }
@@ -235,9 +308,14 @@ namespace Poker.Presentation
 
         void BuildUi()
         {
+            UiTheme.WarmUp();
+
+            // Canvas — дочерний объект контроллера, чтобы Destroy(gameObject) убирал весь UI.
             var canvasGo = new GameObject("Canvas");
-            _canvasRoot = canvasGo.transform;
+            canvasGo.transform.SetParent(transform, false);
             var canvas = canvasGo.AddComponent<Canvas>();
+            // ВАЖНО: RectTransform появляется только после Canvas — сохраняем ссылку после AddComponent.
+            _canvasRoot = canvasGo.GetComponent<RectTransform>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
@@ -249,11 +327,9 @@ namespace Poker.Presentation
             MobileLayout.EnsureTouchInput();
 
             bool phone = MobileLayout.IsPhoneLike();
-            float hudW = phone ? 640f : 540f;
-            float rosterW = phone ? 300f : 340f;
-            float bottomY = phone ? 28f : 36f;
-            float btnH = phone ? 72f : 64f;
-            float btnGap = phone ? 210f : 250f;
+            float pad = phone ? 16f : 18f;
+            float bottomY = phone ? 20f : 36f;
+            float btnH = phone ? 72f : 60f;
 
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
             {
@@ -264,23 +340,30 @@ namespace Poker.Presentation
 
             var leftPanel = CreatePanel(canvasGo.transform, "HudPanel",
                 new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(phone ? 12f : 18f, phone ? -12f : -18f),
-                new Vector2(hudW, phone ? 130f : 150f),
-                new Color(0.05f, 0.07f, 0.1f, 0.88f));
+                new Vector2(pad, phone ? -14f : -18f),
+                new Vector2(phone ? 420f : 440f, phone ? 64f : 60f),
+                UiTheme.Glass);
 
             _hudTitle = CreateText(leftPanel.transform, "Title",
-                new Vector2(16f, -14f), new Vector2(hudW - 40f, 40f), phone ? 26 : 30, FontStyle.Bold, Color.white);
-            _hudDetail = CreateText(leftPanel.transform, "Detail",
-                new Vector2(16f, -52f), new Vector2(hudW - 40f, 36f), phone ? 20 : 22, FontStyle.Normal, new Color(0.85f, 0.9f, 0.95f));
-            _logText = CreateText(leftPanel.transform, "Log",
-                new Vector2(16f, -90f), new Vector2(hudW - 40f, 36f), phone ? 18 : 22, FontStyle.Normal, new Color(1f, 0.92f, 0.45f));
+                new Vector2(0f, 0f), new Vector2(phone ? 400f : 420f, 48f), phone ? 26 : 26, FontStyle.Bold, UiTheme.TextMain);
+            var titleRt = _hudTitle.rectTransform;
+            titleRt.anchorMin = new Vector2(0f, 0f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.offsetMin = new Vector2(16f, 6f);
+            titleRt.offsetMax = new Vector2(-16f, -6f);
+            _hudTitle.alignment = TextAnchor.MiddleLeft;
+
+            // Ошибки старта пишем в заголовок; детальный лог/блайнды в панели раздачи не показываем.
+            _hudDetail = null;
+            _logText = _hudTitle;
 
             var potPanel = CreatePanel(canvasGo.transform, "PotPanel",
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, phone ? -12f : -18f), new Vector2(phone ? 260f : 300f, phone ? 56f : 64f),
-                new Color(0.08f, 0.1f, 0.05f, 0.9f));
+                new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(phone ? -150f : -160f, phone ? -14f : -18f),
+                new Vector2(phone ? 220f : 240f, phone ? 56f : 56f),
+                UiTheme.GlassStrong);
             _potText = CreateText(potPanel.transform, "Pot",
-                new Vector2(0f, 0f), new Vector2(280f, 50f), phone ? 30 : 36, FontStyle.Bold, new Color(1f, 0.92f, 0.35f));
+                new Vector2(0f, 0f), new Vector2(200f, 48f), phone ? 28 : 30, FontStyle.Bold, UiTheme.CoralHot);
             var potRt = _potText.GetComponent<RectTransform>();
             potRt.anchorMin = new Vector2(0.5f, 0.5f);
             potRt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -288,126 +371,144 @@ namespace Poker.Presentation
             potRt.anchoredPosition = Vector2.zero;
             _potText.alignment = TextAnchor.MiddleCenter;
 
-            // Подсказки — на телефоне выше, чтобы не перекрывать кнопки
-            float hintY = phone ? (bottomY + btnH + 24f) : 110f;
-            _hintPanel = CreatePanel(canvasGo.transform, "HintPanel",
-                new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
-                new Vector2(phone ? 12f : 18f, hintY),
-                new Vector2(phone ? 400f : 420f, phone ? 90f : 100f),
-                new Color(0.06f, 0.12f, 0.18f, 0.92f));
-            var hintTitle = CreateText(_hintPanel.transform, "HintTitle",
-                new Vector2(14f, -10f), new Vector2(390f, 24f), 18, FontStyle.Bold, new Color(0.65f, 0.85f, 1f));
-            hintTitle.text = "ВАША КОМБИНАЦИЯ";
-            _hintText = CreateText(_hintPanel.transform, "HintBody",
-                new Vector2(14f, -36f), new Vector2(390f, 56f), phone ? 18 : 22, FontStyle.Normal, Color.white);
+            float hintToggleH = phone ? 48f : 48f;
+            float hintToggleW = phone ? 210f : 210f;
+            float hintPanelH = phone ? 118f : 100f;
+            float hintPanelW = phone ? 420f : 420f;
+            float hintLeft = pad;
+            float hintBottom = phone ? 18f : bottomY;
 
-            _hintsToggleBtn = CreateButton(canvasGo.transform, "Подсказки: вкл", new Vector2(720f, bottomY),
-                new Color(0.2f, 0.25f, 0.35f), ToggleHints);
+            _hintsToggleBtn = CreateButton(canvasGo.transform, "Подсказки: вкл", Vector2.zero,
+                UiTheme.GlassStrong, ToggleHints, pill: true);
             var toggleRt = _hintsToggleBtn.GetComponent<RectTransform>();
-            toggleRt.anchorMin = new Vector2(1f, 0f);
-            toggleRt.anchorMax = new Vector2(1f, 0f);
-            toggleRt.pivot = new Vector2(1f, 0f);
-            toggleRt.anchoredPosition = new Vector2(phone ? -12f : -18f, bottomY);
-            toggleRt.sizeDelta = new Vector2(phone ? 200f : 220f, phone ? 56f : 52f);
+            toggleRt.anchorMin = new Vector2(0f, 0f);
+            toggleRt.anchorMax = new Vector2(0f, 0f);
+            toggleRt.pivot = new Vector2(0f, 0f);
+            toggleRt.anchoredPosition = new Vector2(hintLeft, hintBottom);
+            toggleRt.sizeDelta = new Vector2(hintToggleW, hintToggleH);
             _hintsToggleLabel = _hintsToggleBtn.GetComponentInChildren<Text>();
+            if (_hintsToggleLabel != null)
+                _hintsToggleLabel.fontSize = phone ? 18 : 20;
             RefreshHintsToggleLabel();
 
-            var roster = CreatePanel(canvasGo.transform, "RosterPanel",
-                new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(phone ? -10f : -18f, phone ? -10f : -18f),
-                new Vector2(rosterW, 52f + playerCount * (phone ? 48f : 58f)),
-                new Color(0.05f, 0.07f, 0.1f, 0.9f));
+            float hintPanelY = hintBottom + hintToggleH + (phone ? 10f : 12f);
+            _hintPanel = CreatePanel(canvasGo.transform, "HintPanel",
+                new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                new Vector2(hintLeft, hintPanelY),
+                new Vector2(hintPanelW, hintPanelH),
+                UiTheme.Glass);
+            var hintTitle = CreateText(_hintPanel.transform, "HintTitle",
+                new Vector2(16f, -12f), new Vector2(hintPanelW - 32f, 28f), phone ? 16 : 15, FontStyle.Bold, UiTheme.Cyan);
+            hintTitle.text = "ВАША КОМБИНАЦИЯ";
+            _hintText = CreateText(_hintPanel.transform, "HintBody",
+                new Vector2(16f, -44f), new Vector2(hintPanelW - 32f, hintPanelH - 52f), phone ? 22 : 20, FontStyle.Normal, UiTheme.TextMain);
 
-            if (phone)
-            {
-                // На узком экране ростер компактнее и чуть ниже банка
-                var rostRt = roster.rectTransform;
-                rostRt.anchoredPosition = new Vector2(-10f, -70f);
-            }
+            BuildSeatLabels(canvasGo.transform, phone);
 
-            _rosterTitle = CreateText(roster.transform, "RosterTitle",
-                new Vector2(14f, -10f), new Vector2(rosterW - 40f, 28f), phone ? 18 : 22, FontStyle.Bold, new Color(0.75f, 0.85f, 1f));
-            _rosterTitle.text = "ИГРОКИ";
+            float dockW = phone ? 200f : 200f;
+            float dockH = phone ? 68f : 58f;
+            float dockPad = phone ? 16f : 20f;
+            float dockGap = phone ? 10f : 10f;
 
-            for (int i = 0; i < playerCount; i++)
-            {
-                float y = -44f - i * (phone ? 48f : 58f);
-                var rowGo = new GameObject($"SeatRow_{i}");
-                rowGo.transform.SetParent(roster.transform, false);
-                var rowRt = rowGo.AddComponent<RectTransform>();
-                rowRt.anchorMin = new Vector2(0f, 1f);
-                rowRt.anchorMax = new Vector2(1f, 1f);
-                rowRt.pivot = new Vector2(0.5f, 1f);
-                rowRt.anchoredPosition = new Vector2(0f, y);
-                rowRt.sizeDelta = new Vector2(-20f, phone ? 44f : 52f);
-                var row = rowGo.AddComponent<Image>();
-                row.color = new Color(0.12f, 0.15f, 0.2f, 0.95f);
-                row.raycastTarget = false;
+            _foldBtn = CreateButton(canvasGo.transform, "Фолд", Vector2.zero,
+                UiTheme.Danger, () => OnHuman(ActionType.Fold), pill: true);
+            _checkCallBtn = CreateButton(canvasGo.transform, "Чек", Vector2.zero,
+                UiTheme.Success, () => OnCheckOrCall(), pill: true);
+            _betRaiseBtn = CreateButton(canvasGo.transform, "Рейз", Vector2.zero,
+                UiTheme.RaiseBlue, EnterRaiseMode, pill: true);
 
-                var line = CreateText(rowGo.transform, "Line",
-                    new Vector2(12f, -6f), new Vector2(300f, 42f), phone ? 16 : 20, FontStyle.Normal, Color.white);
-                var lineRt = line.GetComponent<RectTransform>();
-                lineRt.anchorMin = Vector2.zero;
-                lineRt.anchorMax = Vector2.one;
-                lineRt.offsetMin = new Vector2(12f, 4f);
-                lineRt.offsetMax = new Vector2(-8f, -4f);
-                line.alignment = TextAnchor.MiddleLeft;
+            PinBottomRight(_betRaiseBtn, dockPad, dockPad, dockW, dockH);
+            PinBottomRight(_checkCallBtn, dockPad, dockPad + dockH + dockGap, dockW, dockH);
+            PinBottomRight(_foldBtn, dockPad, dockPad + (dockH + dockGap) * 2f, dockW, dockH);
 
-                _seatUiRows.Add(row);
-                _seatUiLines.Add(line);
-            }
+            BuildRaisePanel(canvasGo.transform, phone);
 
-            _foldBtn = CreateButton(canvasGo.transform, "Фолд", new Vector2(-btnGap, bottomY),
-                new Color(0.55f, 0.15f, 0.15f), () => OnHuman(ActionType.Fold));
-            _checkCallBtn = CreateButton(canvasGo.transform, "Чек", new Vector2(0f, bottomY),
-                new Color(0.15f, 0.4f, 0.25f), () => OnCheckOrCall());
-            _betRaiseBtn = CreateButton(canvasGo.transform, "Рейз", new Vector2(btnGap, bottomY),
-                new Color(0.15f, 0.3f, 0.55f), () => OnBetOrRaise());
-            MobileLayout.EnlargeButton(_foldBtn, phone ? 200f : 220f, btnH);
-            MobileLayout.EnlargeButton(_checkCallBtn, phone ? 200f : 220f, btnH);
-            MobileLayout.EnlargeButton(_betRaiseBtn, phone ? 200f : 220f, btnH);
+            var foldLabel = _foldBtn.GetComponentInChildren<Text>();
+            var checkLabel = _checkCallBtn.GetComponentInChildren<Text>();
+            var betLabel0 = _betRaiseBtn.GetComponentInChildren<Text>();
+            if (foldLabel != null) foldLabel.fontSize = phone ? 24 : 22;
+            if (checkLabel != null) checkLabel.fontSize = phone ? 24 : 22;
+            if (betLabel0 != null) betLabel0.fontSize = phone ? 24 : 22;
 
             _nextHandBtn = CreateButton(canvasGo.transform, "Следующая раздача", new Vector2(0f, bottomY),
-                new Color(0.45f, 0.35f, 0.1f), () =>
-                {
-                    _table.StartNewHand();
-                    RefreshAll();
-                });
-            var nextRt = _nextHandBtn.GetComponent<RectTransform>();
-            nextRt.sizeDelta = new Vector2(phone ? 320f : 280f, btnH);
-            _nextHandBtn.gameObject.SetActive(false);
-
-            _rematchBtn = CreateButton(canvasGo.transform, "Новая партия", new Vector2(phone ? -140f : -160f, bottomY),
-                new Color(0.15f, 0.45f, 0.28f), () =>
+                UiTheme.Coral, () =>
                 {
                     if (_winnerOverlay != null) _winnerOverlay.Hide();
-                    _table.RestartMatch(startingChips);
+                    _table.StartNewHand();
                     RefreshAll();
-                });
+                }, pill: true);
+            var nextRt = _nextHandBtn.GetComponent<RectTransform>();
+            nextRt.sizeDelta = new Vector2(phone ? 360f : 280f, btnH);
+            var nextLabel = _nextHandBtn.GetComponentInChildren<Text>();
+            if (nextLabel != null && phone) nextLabel.fontSize = 24;
+            _nextHandBtn.gameObject.SetActive(false);
+
+            _rematchBtn = CreateButton(canvasGo.transform, "Новая партия", new Vector2(phone ? -160f : -160f, bottomY),
+                UiTheme.Success, OnRematch, pill: true);
             var rematchRt = _rematchBtn.GetComponent<RectTransform>();
-            rematchRt.sizeDelta = new Vector2(phone ? 220f : 240f, btnH);
+            rematchRt.sizeDelta = new Vector2(phone ? 260f : 240f, btnH);
             _rematchBtn.gameObject.SetActive(false);
 
-            _menuBtn = CreateButton(canvasGo.transform, "В меню", new Vector2(phone ? 140f : 160f, bottomY),
-                new Color(0.35f, 0.2f, 0.2f), ReturnToMenu);
+            _menuBtn = CreateButton(canvasGo.transform, "В меню", new Vector2(phone ? 160f : 160f, bottomY),
+                UiTheme.GlassStrong, ReturnToMenu, pill: true);
             var menuRt = _menuBtn.GetComponent<RectTransform>();
-            menuRt.sizeDelta = new Vector2(phone ? 180f : 200f, btnH);
+            menuRt.sizeDelta = new Vector2(phone ? 200f : 200f, btnH);
             _menuBtn.gameObject.SetActive(false);
 
             SetActionButtons(false);
             ApplyHintsVisibility();
 
             _winnerOverlay = WinnerOverlay.Create(canvasGo.transform);
-            // Поверх кнопок
-            _winnerOverlay.transform.SetAsLastSibling();
+            // Кнопки матча поверх баннера
+            if (_rematchBtn != null) _rematchBtn.transform.SetAsLastSibling();
+            if (_menuBtn != null) _menuBtn.transform.SetAsLastSibling();
+        }
+
+        static void PinBottomRight(Button btn, float padRight, float padBottom, float width, float height)
+        {
+            if (btn == null) return;
+            var rt = btn.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(1f, 0f);
+            rt.anchoredPosition = new Vector2(-padRight, padBottom);
+            rt.sizeDelta = new Vector2(width, height);
         }
 
         void ReturnToMenu()
         {
-            if (_winnerOverlay != null) _winnerOverlay.Hide();
+            CleanupMatch();
             Destroy(gameObject);
-            var go = new GameObject("MainMenu");
-            go.AddComponent<Poker.Menu.MainMenuController>();
+            Poker.Menu.MainMenuController.Open();
+        }
+
+        void OnRematch()
+        {
+            if (_table == null) return;
+            ExitRaiseMode();
+            if (_winnerOverlay != null) _winnerOverlay.Hide();
+            _aiPending = false;
+            _table.RestartMatch(startingChips);
+            RefreshAll();
+        }
+
+        void CleanupMatch()
+        {
+            ExitRaiseMode();
+            if (_winnerOverlay != null) _winnerOverlay.Hide();
+            if (_table != null)
+            {
+                _table.StateChanged -= RefreshAll;
+                _table.HandEnded -= OnHandEnded;
+                _table.MatchEnded -= OnMatchEnded;
+                _table = null;
+            }
+            _aiPending = false;
+        }
+
+        void OnDestroy()
+        {
+            CleanupMatch();
         }
 
         void ToggleHints()
@@ -454,6 +555,10 @@ namespace Poker.Presentation
             var img = go.AddComponent<Image>();
             img.color = color;
             img.raycastTarget = false;
+            UiTheme.ApplyRounded(img);
+            var edge = go.AddComponent<Outline>();
+            edge.effectColor = UiTheme.GlassBorder;
+            edge.effectDistance = new Vector2(1f, -1f);
             return img;
         }
 
@@ -477,12 +582,13 @@ namespace Poker.Presentation
             text.verticalOverflow = VerticalWrapMode.Overflow;
             text.raycastTarget = false;
             text.text = "";
-            UiFont.MakeCrisp(text);
+            UiFont.MakeCrisp(text, 0.3f);
+            UiTheme.StyleLabel(text);
             return text;
         }
 
         static Button CreateButton(Transform parent, string label, Vector2 anchoredPos, Color bg,
-            UnityEngine.Events.UnityAction onClick)
+            UnityEngine.Events.UnityAction onClick, bool pill = false)
         {
             var go = new GameObject(label);
             go.transform.SetParent(parent, false);
@@ -495,13 +601,15 @@ namespace Poker.Presentation
 
             var img = go.AddComponent<Image>();
             img.color = bg;
+            if (pill) UiTheme.ApplyPill(img);
+            else UiTheme.ApplyRounded(img);
 
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
             var colors = btn.colors;
-            colors.highlightedColor = Color.Lerp(bg, Color.white, 0.2f);
-            colors.pressedColor = Color.Lerp(bg, Color.black, 0.2f);
-            colors.disabledColor = new Color(0.25f, 0.25f, 0.28f, 0.85f);
+            colors.highlightedColor = Color.Lerp(bg, Color.white, 0.18f);
+            colors.pressedColor = Color.Lerp(bg, Color.black, 0.18f);
+            colors.disabledColor = new Color(0.25f, 0.25f, 0.3f, 0.55f);
             btn.colors = colors;
             btn.onClick.AddListener(onClick);
 
@@ -513,19 +621,350 @@ namespace Poker.Presentation
             trt.offsetMin = Vector2.zero;
             trt.offsetMax = Vector2.zero;
             var text = textGo.AddComponent<Text>();
-            text.fontSize = 26;
+            text.fontSize = 24;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.text = label;
-            UiFont.MakeCrisp(text, 0.4f);
+            UiFont.MakeCrisp(text, 0.35f);
 
             return btn;
+        }
+
+        void BuildSeatLabels(Transform canvas, bool phone)
+        {
+            _seatLabelRts.Clear();
+            _seatNameLabels.Clear();
+            _seatChipLabels.Clear();
+
+            for (int i = 0; i < playerCount; i++)
+            {
+                var root = new GameObject($"SeatLabel_{i}");
+                root.transform.SetParent(canvas, false);
+                var rt = root.AddComponent<RectTransform>();
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(phone ? 210f : 190f, phone ? 62f : 56f);
+                rt.anchoredPosition = Vector2.zero;
+
+                var bg = root.AddComponent<Image>();
+                bg.color = new Color(0.04f, 0.06f, 0.12f, 0.88f);
+                bg.raycastTarget = false;
+                UiTheme.ApplyRounded(bg);
+                var edge = root.AddComponent<Outline>();
+                edge.effectColor = new Color(1f, 1f, 1f, 0.25f);
+                edge.effectDistance = new Vector2(1.2f, -1.2f);
+
+                var nameGo = new GameObject("Name");
+                nameGo.transform.SetParent(root.transform, false);
+                var nameRt = nameGo.AddComponent<RectTransform>();
+                nameRt.anchorMin = new Vector2(0f, 0.48f);
+                nameRt.anchorMax = new Vector2(1f, 1f);
+                nameRt.offsetMin = new Vector2(8f, 0f);
+                nameRt.offsetMax = new Vector2(-8f, -4f);
+                var name = nameGo.AddComponent<Text>();
+                name.fontSize = phone ? 20 : 19;
+                name.fontStyle = FontStyle.Bold;
+                name.alignment = TextAnchor.MiddleCenter;
+                name.color = Color.white;
+                name.raycastTarget = false;
+                name.text = $"Игрок {i}";
+                name.horizontalOverflow = HorizontalWrapMode.Overflow;
+                name.verticalOverflow = VerticalWrapMode.Overflow;
+                UiFont.MakeCrisp(name, 0.35f);
+
+                var chipsGo = new GameObject("Chips");
+                chipsGo.transform.SetParent(root.transform, false);
+                var chipsRt = chipsGo.AddComponent<RectTransform>();
+                chipsRt.anchorMin = new Vector2(0f, 0f);
+                chipsRt.anchorMax = new Vector2(1f, 0.52f);
+                chipsRt.offsetMin = new Vector2(8f, 4f);
+                chipsRt.offsetMax = new Vector2(-8f, 0f);
+                var chips = chipsGo.AddComponent<Text>();
+                chips.fontSize = phone ? 18 : 17;
+                chips.fontStyle = FontStyle.Bold;
+                chips.alignment = TextAnchor.MiddleCenter;
+                chips.color = UiTheme.Cyan;
+                chips.raycastTarget = false;
+                chips.text = "1000";
+                chips.horizontalOverflow = HorizontalWrapMode.Overflow;
+                chips.verticalOverflow = VerticalWrapMode.Overflow;
+                UiFont.MakeCrisp(chips, 0.3f);
+
+                _seatLabelRts.Add(rt);
+                _seatNameLabels.Add(name);
+                _seatChipLabels.Add(chips);
+            }
+        }
+
+        void LateUpdate()
+        {
+            PositionSeatLabels();
+        }
+
+        void PositionSeatLabels()
+        {
+            if (_canvasRoot == null || _seats.Count == 0 || _seatLabelRts.Count == 0) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+
+            Rect crect = _canvasRoot.rect;
+            float maxX = crect.width * 0.5f - 160f;
+            float minX = -crect.width * 0.5f + 20f;
+            float maxY = crect.height * 0.5f - 20f;
+            float minY = -crect.height * 0.5f + 20f;
+
+            for (int i = 0; i < _seats.Count && i < _seatLabelRts.Count; i++)
+            {
+                float angle = _seats[i].SeatAngle;
+                float rad = angle * Mathf.Deg2Rad;
+                // Наружу от центра стола — вне сукна
+                Vector3 outward = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
+                // Вправо относительно игрока (лицом к центру), не «holes[1]»
+                Vector3 playerRight = new Vector3(-Mathf.Sin(rad), 0f, Mathf.Cos(rad));
+
+                Vector3 rightCard = _seats[i].CardAnchor.position;
+                if (_holeCards.TryGetValue(i, out var holes) && holes != null && holes.Count >= 2
+                    && holes[0] != null && holes[1] != null)
+                {
+                    Vector3 a = holes[0].transform.position;
+                    Vector3 b = holes[1].transform.position;
+                    // Какая карта правее для этого места
+                    rightCard = Vector3.Dot(b - a, playerRight) >= 0f ? b : a;
+                }
+
+                // Правее правой карты игрока + вне поля
+                Vector3 world = rightCard
+                    + playerRight * 1.05f
+                    + outward * 1.35f
+                    + Vector3.up * 0.35f;
+
+                Vector3 sp = _cam.WorldToScreenPoint(world);
+                if (sp.z < 0.05f)
+                {
+                    _seatLabelRts[i].gameObject.SetActive(false);
+                    continue;
+                }
+
+                _seatLabelRts[i].gameObject.SetActive(true);
+
+                Vector2 local = new Vector2(
+                    (sp.x / Screen.width - 0.5f) * crect.width,
+                    (sp.y / Screen.height - 0.5f) * crect.height);
+
+                local.x = Mathf.Clamp(local.x, minX, maxX);
+                local.y = Mathf.Clamp(local.y, minY, maxY);
+                _seatLabelRts[i].anchoredPosition = local;
+            }
+        }
+
+        void BuildRaisePanel(Transform canvas, bool phone)
+        {
+            float stripW = phone ? 108f : 120f;
+            float pad = phone ? 10f : 14f;
+
+            _raisePanel = new GameObject("RaisePanel");
+            _raisePanel.transform.SetParent(canvas, false);
+            var panelRt = _raisePanel.AddComponent<RectTransform>();
+            // Полная высота справа
+            panelRt.anchorMin = new Vector2(1f, 0f);
+            panelRt.anchorMax = new Vector2(1f, 1f);
+            panelRt.pivot = new Vector2(1f, 0.5f);
+            panelRt.offsetMin = new Vector2(-stripW - pad, pad);
+            panelRt.offsetMax = new Vector2(-pad, -pad);
+
+            var panelImg = _raisePanel.AddComponent<Image>();
+            panelImg.color = new Color(0.06f, 0.08f, 0.14f, 0.88f);
+            panelImg.raycastTarget = true;
+            UiTheme.ApplyRounded(panelImg);
+            var edge = _raisePanel.AddComponent<Outline>();
+            edge.effectColor = new Color(UiTheme.Coral.r, UiTheme.Coral.g, UiTheme.Coral.b, 0.35f);
+            edge.effectDistance = new Vector2(1.2f, -1.2f);
+
+            // Сумма сверху
+            _raiseAmountLabel = CreateText(_raisePanel.transform, "RaiseAmount",
+                new Vector2(0f, -14f), new Vector2(stripW - 16f, 56f), phone ? 20 : 22, FontStyle.Bold, UiTheme.CoralHot);
+            _raiseAmountLabel.alignment = TextAnchor.MiddleCenter;
+            var amtRt = _raiseAmountLabel.rectTransform;
+            amtRt.anchorMin = new Vector2(0f, 1f);
+            amtRt.anchorMax = new Vector2(1f, 1f);
+            amtRt.pivot = new Vector2(0.5f, 1f);
+            amtRt.anchoredPosition = new Vector2(0f, -12f);
+            amtRt.sizeDelta = new Vector2(-12f, 56f);
+            _raiseAmountLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+            // Кнопки снизу
+            float btnH = phone ? 52f : 56f;
+            _raiseCancelBtn = CreateButton(_raisePanel.transform, "Отмена", Vector2.zero,
+                UiTheme.GlassStrong, ExitRaiseMode, pill: true);
+            var canRt = _raiseCancelBtn.GetComponent<RectTransform>();
+            canRt.anchorMin = new Vector2(0f, 0f);
+            canRt.anchorMax = new Vector2(1f, 0f);
+            canRt.pivot = new Vector2(0.5f, 0f);
+            canRt.anchoredPosition = new Vector2(0f, 10f);
+            canRt.sizeDelta = new Vector2(-16f, btnH);
+            var canLabel = _raiseCancelBtn.GetComponentInChildren<Text>();
+            if (canLabel != null) canLabel.fontSize = phone ? 16 : 17;
+
+            _raiseConfirmBtn = CreateButton(_raisePanel.transform, "OK", Vector2.zero,
+                UiTheme.Coral, ConfirmRaise, pill: true);
+            var confRt = _raiseConfirmBtn.GetComponent<RectTransform>();
+            confRt.anchorMin = new Vector2(0f, 0f);
+            confRt.anchorMax = new Vector2(1f, 0f);
+            confRt.pivot = new Vector2(0.5f, 0f);
+            confRt.anchoredPosition = new Vector2(0f, 10f + btnH + 8f);
+            confRt.sizeDelta = new Vector2(-16f, btnH);
+            var confLabel = _raiseConfirmBtn.GetComponentInChildren<Text>();
+            if (confLabel != null) confLabel.fontSize = phone ? 18 : 20;
+
+            // Вертикальный слайдер между суммой и кнопками
+            var sliderGo = new GameObject("RaiseSlider");
+            sliderGo.transform.SetParent(_raisePanel.transform, false);
+            var sliderRt = sliderGo.AddComponent<RectTransform>();
+            sliderRt.anchorMin = new Vector2(0.5f, 0f);
+            sliderRt.anchorMax = new Vector2(0.5f, 1f);
+            sliderRt.pivot = new Vector2(0.5f, 0.5f);
+            sliderRt.anchoredPosition = Vector2.zero;
+            sliderRt.sizeDelta = new Vector2(44f, 0f);
+            sliderRt.offsetMin = new Vector2(-22f, 10f + btnH * 2f + 28f);
+            sliderRt.offsetMax = new Vector2(22f, -78f);
+
+            // Track (вертикальный)
+            var bgGo = new GameObject("Background");
+            bgGo.transform.SetParent(sliderGo.transform, false);
+            var bgRt = bgGo.AddComponent<RectTransform>();
+            bgRt.anchorMin = new Vector2(0.35f, 0f);
+            bgRt.anchorMax = new Vector2(0.65f, 1f);
+            bgRt.offsetMin = Vector2.zero;
+            bgRt.offsetMax = Vector2.zero;
+            var bgImg = bgGo.AddComponent<Image>();
+            bgImg.color = new Color(1f, 1f, 1f, 0.12f);
+            UiTheme.ApplyPill(bgImg);
+
+            var fillArea = new GameObject("Fill Area");
+            fillArea.transform.SetParent(sliderGo.transform, false);
+            var fillAreaRt = fillArea.AddComponent<RectTransform>();
+            fillAreaRt.anchorMin = new Vector2(0.35f, 0f);
+            fillAreaRt.anchorMax = new Vector2(0.65f, 1f);
+            fillAreaRt.offsetMin = Vector2.zero;
+            fillAreaRt.offsetMax = Vector2.zero;
+
+            var fillGo = new GameObject("Fill");
+            fillGo.transform.SetParent(fillArea.transform, false);
+            var fillRt = fillGo.AddComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            var fillImg = fillGo.AddComponent<Image>();
+            fillImg.color = UiTheme.Coral;
+            UiTheme.ApplyPill(fillImg);
+
+            var handleArea = new GameObject("Handle Slide Area");
+            handleArea.transform.SetParent(sliderGo.transform, false);
+            var handleAreaRt = handleArea.AddComponent<RectTransform>();
+            handleAreaRt.anchorMin = Vector2.zero;
+            handleAreaRt.anchorMax = Vector2.one;
+            handleAreaRt.offsetMin = new Vector2(0f, 14f);
+            handleAreaRt.offsetMax = new Vector2(0f, -14f);
+
+            var handleGo = new GameObject("Handle");
+            handleGo.transform.SetParent(handleArea.transform, false);
+            var handleRt = handleGo.AddComponent<RectTransform>();
+            handleRt.sizeDelta = new Vector2(36f, 36f);
+            var handleImg = handleGo.AddComponent<Image>();
+            handleImg.color = Color.white;
+            UiTheme.ApplyCircle(handleImg);
+            var handleGlow = handleGo.AddComponent<Outline>();
+            handleGlow.effectColor = new Color(UiTheme.Coral.r, UiTheme.Coral.g, UiTheme.Coral.b, 0.55f);
+            handleGlow.effectDistance = new Vector2(2f, -2f);
+
+            _raiseSlider = sliderGo.AddComponent<Slider>();
+            _raiseSlider.fillRect = fillRt;
+            _raiseSlider.handleRect = handleRt;
+            _raiseSlider.targetGraphic = handleImg;
+            _raiseSlider.direction = Slider.Direction.BottomToTop;
+            _raiseSlider.wholeNumbers = true;
+            _raiseSlider.minValue = 1;
+            _raiseSlider.maxValue = 100;
+            _raiseSlider.value = 1;
+            _raiseSlider.onValueChanged.AddListener(_ => UpdateRaiseLabel());
+
+            _raisePanel.SetActive(false);
+        }
+
+        void UpdateRaiseLabel()
+        {
+            if (_raiseAmountLabel == null || _raiseSlider == null || _table == null) return;
+            if (!_table.AwaitingHumanAction)
+            {
+                _raiseAmountLabel.text = "";
+                return;
+            }
+            var legal = _table.GetLegalActions(_table.ActingSeat);
+            int amount = Mathf.RoundToInt(_raiseSlider.value);
+            bool isBet = legal.CanBet;
+            bool atMax = amount >= legal.MaxRaiseTo && legal.MaxRaiseTo > 0;
+            if (atMax)
+                _raiseAmountLabel.text = $"ALL IN\n{amount}";
+            else if (isBet)
+                _raiseAmountLabel.text = $"BET\n{amount}";
+            else
+                _raiseAmountLabel.text = $"RAISE\n{amount}";
+        }
+
+        void EnterRaiseMode()
+        {
+            if (!_table.AwaitingHumanAction) return;
+            var legal = _table.GetLegalActions(_table.ActingSeat);
+            if (!legal.CanBet && !legal.CanRaise) return;
+
+            _raiseMode = true;
+            if (_foldBtn != null) _foldBtn.gameObject.SetActive(false);
+            if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(false);
+            if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(false);
+
+            int min = Mathf.Max(1, legal.MinRaiseTo);
+            int max = Mathf.Max(min, legal.MaxRaiseTo);
+            _raiseSlider.minValue = min;
+            _raiseSlider.maxValue = max;
+            _raiseSlider.value = min;
+            if (_raisePanel != null)
+            {
+                _raisePanel.SetActive(true);
+                _raisePanel.transform.SetAsLastSibling();
+            }
+            UpdateRaiseLabel();
+        }
+
+        void ExitRaiseMode()
+        {
+            _raiseMode = false;
+            if (_raisePanel != null) _raisePanel.SetActive(false);
+        }
+
+        void ConfirmRaise()
+        {
+            if (!_table.AwaitingHumanAction || !_raiseMode) return;
+            int seat = _table.ActingSeat;
+            var legal = _table.GetLegalActions(seat);
+            int amount = Mathf.RoundToInt(_raiseSlider.value);
+            amount = Mathf.Clamp(amount, legal.MinRaiseTo, legal.MaxRaiseTo);
+
+            ExitRaiseMode();
+            if (legal.CanBet)
+                _table.TryApplyAction(seat, new PlayerAction(ActionType.Bet, amount));
+            else if (legal.CanRaise)
+                _table.TryApplyAction(seat, new PlayerAction(ActionType.Raise, amount));
+            else
+                _table.TryApplyAction(seat, new PlayerAction(ActionType.AllIn));
+            RefreshAll();
         }
 
         void OnHuman(ActionType type)
         {
             if (!_table.AwaitingHumanAction) return;
+            ExitRaiseMode();
             _table.TryApplyAction(_table.ActingSeat, new PlayerAction(type));
             RefreshAll();
         }
@@ -533,6 +972,7 @@ namespace Poker.Presentation
         void OnCheckOrCall()
         {
             if (!_table.AwaitingHumanAction) return;
+            ExitRaiseMode();
             int seat = _table.ActingSeat;
             var legal = _table.GetLegalActions(seat);
             if (legal.CanCheck)
@@ -542,49 +982,45 @@ namespace Poker.Presentation
             RefreshAll();
         }
 
-        void OnBetOrRaise()
-        {
-            if (!_table.AwaitingHumanAction) return;
-            int seat = _table.ActingSeat;
-            var legal = _table.GetLegalActions(seat);
-            if (legal.CanBet)
-            {
-                int amount = Mathf.Clamp(legal.Pot * raiseMultiplier / 4, legal.MinRaiseTo, legal.MaxRaiseTo);
-                _table.TryApplyAction(seat, new PlayerAction(ActionType.Bet, amount));
-            }
-            else if (legal.CanRaise)
-            {
-                int amount = Mathf.Clamp(legal.MinRaiseTo + legal.Pot / 2, legal.MinRaiseTo, legal.MaxRaiseTo);
-                _table.TryApplyAction(seat, new PlayerAction(ActionType.Raise, amount));
-            }
-            else
-                _table.TryApplyAction(seat, new PlayerAction(ActionType.AllIn));
-            RefreshAll();
-        }
-
         void SetActionButtons(bool visible)
         {
-            _foldBtn.gameObject.SetActive(visible);
-            _checkCallBtn.gameObject.SetActive(visible);
-            _betRaiseBtn.gameObject.SetActive(visible);
+            if (_raiseMode && visible) return;
+            if (_foldBtn != null) _foldBtn.gameObject.SetActive(visible);
+            if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(visible);
+            if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(visible);
+            if (!visible) ExitRaiseMode();
         }
 
         void RefreshActionButtons()
         {
+            if (_foldBtn == null || _checkCallBtn == null || _betRaiseBtn == null) return;
+            if (_raiseMode)
+            {
+                // В режиме рейза только панель слайдера.
+                if (_raisePanel != null) _raisePanel.SetActive(true);
+                if (_foldBtn != null) _foldBtn.gameObject.SetActive(false);
+                if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(false);
+                if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(false);
+                UpdateRaiseLabel();
+                return;
+            }
+
             SetActionButtons(true);
             var legal = _table.GetLegalActions(_table.ActingSeat);
+
             _foldBtn.interactable = legal.CanFold;
             _checkCallBtn.interactable = legal.CanCheck || legal.CanCall;
             var checkCallLabel = _checkCallBtn.GetComponentInChildren<Text>();
             if (checkCallLabel != null)
                 checkCallLabel.text = legal.CanCheck ? "Чек" : $"Колл {legal.CallAmount}";
 
-            _betRaiseBtn.interactable = legal.CanBet || legal.CanRaise;
+            bool canBetRaise = legal.CanBet || legal.CanRaise;
+            _betRaiseBtn.interactable = canBetRaise;
             var betLabel = _betRaiseBtn.GetComponentInChildren<Text>();
             if (betLabel != null)
             {
-                if (legal.CanBet) betLabel.text = $"Бет {legal.MinRaiseTo}+";
-                else if (legal.CanRaise) betLabel.text = $"Рейз до {legal.MinRaiseTo}+";
+                if (legal.CanBet) betLabel.text = "Бет";
+                else if (legal.CanRaise) betLabel.text = "Рейз";
                 else betLabel.text = "Олл-ин";
             }
         }
@@ -593,9 +1029,7 @@ namespace Poker.Presentation
         {
             if (_table == null) return;
 
-            _hudTitle.text = $"Раздача №{_table.HandNumber}   ·   {PokerRu.StreetName(_table.Street)}";
-            _hudDetail.text = $"Нужно уравнять: {_table.CurrentBet}    ·    Блайнды {_table.SmallBlind}/{_table.BigBlind}";
-            _logText.text = _table.LastActionLog;
+            _hudTitle.text = $"Раздача №{_table.HandNumber}  ·  {PokerRu.StreetName(_table.Street)}";
             _potText.text = $"БАНК  {_table.Pot}";
 
             bool showTurn = _table.ActingSeat >= 0 &&
@@ -625,42 +1059,31 @@ namespace Poker.Presentation
                 bool handWinner = IsSeatHandWinner(i);
                 _seats[i].Refresh(player, dealer, acting, _table.Street, _table.BigBlind, handWinner);
 
-                string status = "";
-                if (player.IsEliminated || (player.Chips <= 0 &&
-                    (_table.Street == Street.HandComplete || _table.Street == Street.MatchComplete ||
-                     _table.Street == Street.Waiting)))
-                    status = "ВЫБЫЛ";
-                else if (player.HasFolded) status = "ФОЛД";
-                else if (player.IsAllIn) status = "ОЛЛ-ИН";
-                else if (player.BetThisStreet > 0) status = $"ставка {player.BetThisStreet}";
-                else if (acting) status = "ходит";
-
-                string dealerMark = dealer ? " [D]" : "";
-                string blindMark = "";
-                if (!player.IsEliminated && player.Chips > 0)
+                if (i < _seatNameLabels.Count)
                 {
-                    if (i == _table.SmallBlindSeat) blindMark = " МБ";
-                    if (i == _table.BigBlindSeat) blindMark = " ББ";
+                    string tag = acting ? " ●" : "";
+                    if (player.HasFolded) tag = " · фолд";
+                    else if (player.IsEliminated || player.Chips <= 0) tag = " · out";
+                    _seatNameLabels[i].text = player.Name + tag;
+                    _seatNameLabels[i].color = acting
+                        ? UiTheme.CoralHot
+                        : player.HasFolded
+                            ? UiTheme.TextDim
+                            : UiTheme.TextMain;
                 }
-
-                _seatUiLines[i].text = $"{player.Name}{dealerMark}{blindMark}\n{player.Chips} фишек" +
-                                       (string.IsNullOrEmpty(status) ? "" : $"  ·  {status}");
-
-                if (player.IsEliminated || (player.Chips <= 0 && _table.Street == Street.MatchComplete))
-                    _seatUiRows[i].color = new Color(0.15f, 0.12f, 0.12f, 0.9f);
-                else if (player.HasFolded)
-                    _seatUiRows[i].color = new Color(0.2f, 0.2f, 0.22f, 0.85f);
-                else if (acting)
-                    _seatUiRows[i].color = new Color(0.45f, 0.35f, 0.08f, 0.95f);
-                else if (player.Type == PlayerType.Human)
-                    _seatUiRows[i].color = new Color(0.12f, 0.28f, 0.22f, 0.95f);
-                else
-                    _seatUiRows[i].color = new Color(0.12f, 0.15f, 0.2f, 0.95f);
+                if (i < _seatChipLabels.Count)
+                {
+                    _seatChipLabels[i].text = player.IsEliminated ? "—" : $"{player.Chips}";
+                    _seatChipLabels[i].color = player.HasFolded ? UiTheme.TextDim : UiTheme.Cyan;
+                }
 
                 bool reveal = player.Type == PlayerType.Human ||
                               (_table.Street >= Street.Showdown && !player.HasFolded && !player.IsEliminated) ||
                               ((_table.Street == Street.HandComplete || _table.Street == Street.MatchComplete) &&
                                !player.HasFolded && _table.LastResult != null);
+
+                // Вскрытие — лицом к герою (камере), рубашки — по ориентации места.
+                bool faceTowardMe = reveal && player.Type != PlayerType.Human;
 
                 var holes = _holeCards[i];
                 for (int c = 0; c < 2; c++)
@@ -673,12 +1096,15 @@ namespace Poker.Presentation
                     if (c < player.HoleCards.Count)
                     {
                         holes[c].gameObject.SetActive(true);
+                        holes[c].SetFacingViewer(faceTowardMe);
                         holes[c].SetCard(player.HoleCards[c], reveal);
                     }
                     else
                         holes[c].gameObject.SetActive(false);
                 }
             }
+
+            PositionSeatLabels();
 
             RefreshHint();
 

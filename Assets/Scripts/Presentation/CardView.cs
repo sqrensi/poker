@@ -10,6 +10,7 @@ namespace Poker.Presentation
         bool _hasCard;
         Card _card;
         float _width = 0.78f;
+        float _seatYaw;
 
         public static CardView Create(Transform parent, Vector3 localPos, float yawDegrees = 0f, float width = 0.78f, int sortingOrder = 10)
         {
@@ -18,14 +19,28 @@ namespace Poker.Presentation
             var root = new GameObject("Card");
             root.transform.SetParent(parent, false);
             root.transform.localPosition = localPos;
-            root.transform.localRotation = Quaternion.Euler(-90f, 180f + yawDegrees, 0f);
             root.transform.localScale = Vector3.one;
 
             var view = root.AddComponent<CardView>();
             view._width = width;
+            view._seatYaw = yawDegrees;
+            view.ApplyYaw(yawDegrees);
             view.BuildVisuals(sortingOrder);
             view.ShowBack();
             return view;
+        }
+
+        void ApplyYaw(float yawDegrees)
+        {
+            transform.localRotation = Quaternion.Euler(-90f, 180f + yawDegrees, 0f);
+        }
+
+        /// <summary>
+        /// faceTowardViewer: при вскрытии — лицом к камере (как у героя), иначе ориентация места.
+        /// </summary>
+        public void SetFacingViewer(bool faceTowardViewer)
+        {
+            ApplyYaw(faceTowardViewer ? 0f : _seatYaw);
         }
 
         void BuildVisuals(int sortingOrder)

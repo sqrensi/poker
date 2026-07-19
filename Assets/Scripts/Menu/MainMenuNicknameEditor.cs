@@ -5,17 +5,14 @@ using Poker.Presentation;
 
 namespace Poker.Menu
 {
-    /// <summary>
-    /// Смена ника в главном меню (упрощённый аналог ShooterPrototype MainMenuNicknameEditor).
-    /// Режим просмотра → «Изменить» → поле активно → «Сохранить».
-    /// </summary>
+    /// <summary>Ник в стиле glass pill (низ экрана по центру).</summary>
     public sealed class MainMenuNicknameEditor : MonoBehaviour
     {
         InputField _input;
         Text _status;
-        Text _idHint;
         Button _actionBtn;
         Text _actionLabel;
+        Image _actionImg;
         bool _editing;
         System.Action _onChanged;
 
@@ -31,61 +28,70 @@ namespace Poker.Menu
 
         void Build()
         {
+            bool phone = MobileLayout.IsPhoneLike();
             var root = gameObject.AddComponent<RectTransform>();
-            root.anchorMin = new Vector2(1f, 0f);
-            root.anchorMax = new Vector2(1f, 0f);
-            root.pivot = new Vector2(1f, 0f);
-            root.anchoredPosition = new Vector2(-20f, 20f);
-            root.sizeDelta = new Vector2(MobileLayout.IsPhoneLike() ? 320f : 360f, 150f);
+            root.anchorMin = new Vector2(0.5f, 0f);
+            root.anchorMax = new Vector2(0.5f, 0f);
+            root.pivot = new Vector2(0.5f, 0f);
+            root.anchoredPosition = new Vector2(0f, phone ? 22f : 28f);
+            root.sizeDelta = new Vector2(phone ? 520f : 480f, 118f);
 
             var bg = gameObject.AddComponent<Image>();
-            bg.color = new Color(0.08f, 0.11f, 0.1f, 0.92f);
+            bg.color = UiTheme.Glass;
+            bg.raycastTarget = true;
+            UiTheme.ApplyRounded(bg);
+            var edge = gameObject.AddComponent<Outline>();
+            edge.effectColor = UiTheme.GlassBorder;
+            edge.effectDistance = new Vector2(1f, -1f);
 
-            var title = CreateLabel(transform, "Ник", new Vector2(16f, -12f), new Vector2(200f, 24f), 16,
-                FontStyle.Bold, new Color(0.85f, 0.78f, 0.45f));
-            title.alignment = TextAnchor.UpperLeft;
+            var title = CreateLabel(transform, "ПРОФИЛЬ", new Vector2(0f, -10f), new Vector2(200f, 22f), 13,
+                FontStyle.Bold, UiTheme.Cyan);
+            title.alignment = TextAnchor.MiddleCenter;
+            var titleRt = title.rectTransform;
+            titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 1f);
+            titleRt.pivot = new Vector2(0.5f, 1f);
 
-            // Input
+            // Pill input
             var fieldGo = new GameObject("NickInput");
             fieldGo.transform.SetParent(transform, false);
             var fieldRt = fieldGo.AddComponent<RectTransform>();
-            fieldRt.anchorMin = new Vector2(0f, 1f);
-            fieldRt.anchorMax = new Vector2(1f, 1f);
-            fieldRt.pivot = new Vector2(0.5f, 1f);
-            fieldRt.anchoredPosition = new Vector2(-58f, -42f);
-            fieldRt.sizeDelta = new Vector2(-132f, 44f);
+            fieldRt.anchorMin = new Vector2(0f, 0.5f);
+            fieldRt.anchorMax = new Vector2(1f, 0.5f);
+            fieldRt.pivot = new Vector2(0.5f, 0.5f);
+            fieldRt.anchoredPosition = new Vector2(-58f, -4f);
+            fieldRt.sizeDelta = new Vector2(-140f, 46f);
             var fieldImg = fieldGo.AddComponent<Image>();
-            fieldImg.color = new Color(0.05f, 0.07f, 0.07f, 1f);
+            fieldImg.color = new Color(0f, 0f, 0f, 0.35f);
+            UiTheme.ApplyPill(fieldImg);
 
             var textGo = new GameObject("Text");
             textGo.transform.SetParent(fieldGo.transform, false);
             var textRt = textGo.AddComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(12f, 6f);
-            textRt.offsetMax = new Vector2(-12f, -6f);
+            textRt.offsetMin = new Vector2(18f, 4f);
+            textRt.offsetMax = new Vector2(-18f, -4f);
             var text = textGo.AddComponent<Text>();
-            text.font = UiFont.Builtin();
             text.fontSize = 20;
-            text.color = Color.white;
+            text.color = UiTheme.TextMain;
             text.alignment = TextAnchor.MiddleLeft;
             text.supportRichText = false;
-            UiFont.MakeCrisp(text, 0.3f);
+            UiFont.MakeCrisp(text, 0.25f);
 
             var phGo = new GameObject("Placeholder");
             phGo.transform.SetParent(fieldGo.transform, false);
             var phRt = phGo.AddComponent<RectTransform>();
             phRt.anchorMin = Vector2.zero;
             phRt.anchorMax = Vector2.one;
-            phRt.offsetMin = new Vector2(12f, 6f);
-            phRt.offsetMax = new Vector2(-12f, -6f);
+            phRt.offsetMin = new Vector2(18f, 4f);
+            phRt.offsetMax = new Vector2(-18f, -4f);
             var ph = phGo.AddComponent<Text>();
-            ph.font = UiFont.Builtin();
             ph.fontSize = 18;
             ph.fontStyle = FontStyle.Italic;
-            ph.color = new Color(1f, 1f, 1f, 0.35f);
+            ph.color = UiTheme.TextDim;
             ph.text = "Ваш ник";
             ph.alignment = TextAnchor.MiddleLeft;
+            UiFont.MakeCrisp(ph, 0.2f);
 
             _input = fieldGo.AddComponent<InputField>();
             _input.textComponent = text;
@@ -94,19 +100,20 @@ namespace Poker.Menu
             _input.contentType = InputField.ContentType.Standard;
             _input.lineType = InputField.LineType.SingleLine;
 
-            // Action button
+            // Action pill
             var btnGo = new GameObject("Action");
             btnGo.transform.SetParent(transform, false);
             var btnRt = btnGo.AddComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(1f, 1f);
-            btnRt.anchorMax = new Vector2(1f, 1f);
-            btnRt.pivot = new Vector2(1f, 1f);
-            btnRt.anchoredPosition = new Vector2(-12f, -42f);
-            btnRt.sizeDelta = new Vector2(100f, 44f);
-            var btnImg = btnGo.AddComponent<Image>();
-            btnImg.color = new Color(0.2f, 0.35f, 0.28f, 1f);
+            btnRt.anchorMin = new Vector2(1f, 0.5f);
+            btnRt.anchorMax = new Vector2(1f, 0.5f);
+            btnRt.pivot = new Vector2(1f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(-14f, -4f);
+            btnRt.sizeDelta = new Vector2(118f, 46f);
+            _actionImg = btnGo.AddComponent<Image>();
+            _actionImg.color = UiTheme.GlassStrong;
+            UiTheme.ApplyPill(_actionImg);
             _actionBtn = btnGo.AddComponent<Button>();
-            _actionBtn.targetGraphic = btnImg;
+            _actionBtn.targetGraphic = _actionImg;
             _actionBtn.onClick.AddListener(OnAction);
 
             var lblGo = new GameObject("Label");
@@ -114,26 +121,20 @@ namespace Poker.Menu
             var lblRt = lblGo.AddComponent<RectTransform>();
             lblRt.anchorMin = Vector2.zero;
             lblRt.anchorMax = Vector2.one;
-            lblRt.offsetMin = Vector2.zero;
-            lblRt.offsetMax = Vector2.zero;
+            lblRt.offsetMin = lblRt.offsetMax = Vector2.zero;
             _actionLabel = lblGo.AddComponent<Text>();
-            _actionLabel.font = UiFont.Builtin();
             _actionLabel.fontSize = 16;
             _actionLabel.fontStyle = FontStyle.Bold;
             _actionLabel.alignment = TextAnchor.MiddleCenter;
-            _actionLabel.color = Color.white;
-            UiFont.MakeCrisp(_actionLabel, 0.35f);
+            _actionLabel.color = UiTheme.TextMain;
+            UiFont.MakeCrisp(_actionLabel, 0.3f);
 
-            _status = CreateLabel(transform, "", new Vector2(16f, -96f), new Vector2(328f, 22f), 14,
-                FontStyle.Normal, new Color(0.75f, 0.85f, 0.7f));
-            _status.alignment = TextAnchor.UpperLeft;
-
-            string pid = PlayerIdentityService.GetOrCreatePlayerId();
-            _idHint = CreateLabel(transform,
-                $"id …{pid.Substring(Mathf.Max(0, pid.Length - 8))}",
-                new Vector2(16f, -118f), new Vector2(328f, 20f), 13,
-                FontStyle.Normal, new Color(0.55f, 0.62f, 0.58f));
-            _idHint.alignment = TextAnchor.UpperLeft;
+            _status = CreateLabel(transform, "", new Vector2(0f, 10f), new Vector2(440f, 20f), 13,
+                FontStyle.Normal, UiTheme.TextDim);
+            _status.alignment = TextAnchor.MiddleCenter;
+            var stRt = _status.rectTransform;
+            stRt.anchorMin = stRt.anchorMax = new Vector2(0.5f, 0f);
+            stRt.pivot = new Vector2(0.5f, 0f);
 
             RefreshFromPrefs();
             SetEditing(false);
@@ -158,15 +159,9 @@ namespace Poker.Menu
                 }
             }
             if (_actionLabel != null)
-                _actionLabel.text = editing ? "Сохранить" : "Изменить";
-            if (_actionBtn != null)
-            {
-                var img = _actionBtn.targetGraphic as Image;
-                if (img != null)
-                    img.color = editing
-                        ? new Color(0.55f, 0.42f, 0.12f, 1f)
-                        : new Color(0.2f, 0.35f, 0.28f, 1f);
-            }
+                _actionLabel.text = editing ? "OK" : "Изменить";
+            if (_actionImg != null)
+                _actionImg.color = editing ? UiTheme.Coral : UiTheme.GlassStrong;
         }
 
         void OnAction()
@@ -174,7 +169,11 @@ namespace Poker.Menu
             if (!_editing)
             {
                 SetEditing(true);
-                if (_status != null) _status.text = "Введите ник (3–16) и сохраните";
+                if (_status != null)
+                {
+                    _status.text = "3–16 символов";
+                    _status.color = UiTheme.TextDim;
+                }
                 return;
             }
 
@@ -182,8 +181,8 @@ namespace Poker.Menu
             {
                 if (_status != null)
                 {
-                    _status.text = err ?? "Не удалось сохранить";
-                    _status.color = new Color(0.95f, 0.55f, 0.45f);
+                    _status.text = err ?? "Ошибка";
+                    _status.color = UiTheme.Danger;
                 }
                 return;
             }
@@ -192,8 +191,8 @@ namespace Poker.Menu
             SetEditing(false);
             if (_status != null)
             {
-                _status.text = "Ник сохранён";
-                _status.color = new Color(0.75f, 0.85f, 0.7f);
+                _status.text = "Сохранено";
+                _status.color = UiTheme.Cyan;
             }
             _onChanged?.Invoke();
         }
@@ -204,19 +203,15 @@ namespace Poker.Menu
             var go = new GameObject("Label");
             go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0f, 1f);
-            rt.anchorMax = new Vector2(0f, 1f);
-            rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = pos;
             rt.sizeDelta = size;
             var t = go.AddComponent<Text>();
-            t.font = UiFont.Builtin();
             t.text = content;
             t.fontSize = fontSize;
             t.fontStyle = style;
             t.color = color;
             t.raycastTarget = false;
-            UiFont.MakeCrisp(t, 0.3f);
+            UiFont.MakeCrisp(t, 0.25f);
             return t;
         }
     }

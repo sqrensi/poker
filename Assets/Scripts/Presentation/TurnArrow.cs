@@ -30,7 +30,7 @@ namespace Poker.Presentation
             _shaft.localPosition = new Vector3(0f, 0.08f, -0.35f);
             _shaft.localScale = new Vector3(0.22f, 0.08f, 0.7f);
             Object.Destroy(_shaft.GetComponent<Collider>());
-            _shaft.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(color);
+            PokerMaterials.ApplyColor(_shaft.GetComponent<MeshRenderer>(), color);
 
             // Наконечник: вытянутый куб ромбом (повёрнут)
             _head = GameObject.CreatePrimitive(PrimitiveType.Cube).transform;
@@ -40,7 +40,7 @@ namespace Poker.Presentation
             _head.localRotation = Quaternion.Euler(0f, 45f, 0f);
             _head.localScale = new Vector3(0.45f, 0.08f, 0.45f);
             Object.Destroy(_head.GetComponent<Collider>());
-            _head.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(color);
+            PokerMaterials.ApplyColor(_head.GetComponent<MeshRenderer>(), color);
         }
 
         /// <summary>

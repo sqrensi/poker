@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
@@ -13,6 +14,41 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "..", "public");
 const PORT = Number(process.env.PORT || 8787);
 const PUBLIC_BASE = process.env.PUBLIC_BASE || `http://localhost:${PORT}`;
+
+/** IPv4 адреса этой машины в локальной сети. */
+function lanAddresses(): { name: string; address: string }[] {
+  const out: { name: string; address: string }[] = [];
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      const family = String(net.family);
+      if ((family === "IPv4" || family === "4") && !net.internal) {
+        out.push({ name, address: net.address });
+      }
+    }
+  }
+  return out;
+}
+
+function lanInfo() {
+  const addresses = lanAddresses();
+  return {
+    port: PORT,
+    addresses,
+    urls: addresses.map((a) => `http://${a.address}:${PORT}`),
+    hint: "Друзья в той же Wi‑Fi открывают один из urls в браузере",
+  };
+}
+
+/** База для invite: origin клиента, иначе первый LAN URL, иначе PUBLIC_BASE. */
+function inviteBaseFrom(msg: ClientMsg, lan: ReturnType<typeof lanInfo>): string {
+  const fromClient = (msg as { publicBase?: string }).publicBase;
+  if (typeof fromClient === "string" && fromClient.startsWith("http")) {
+    return fromClient.replace(/\/$/, "");
+  }
+  if (lan.urls[0]) return lan.urls[0];
+  return PUBLIC_BASE;
+}
 
 const mime: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -55,7 +91,17 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.pathname === "/health") {
-    sendJson(res, 200, { ok: true, online: rooms.onlineCount(), queue: rooms.queue.size });
+    sendJson(res, 200, { ok: true, online: rooms.onlineCount(), queue: rooms.queue.size, lan: lanInfo() });
+    return;
+  }
+
+  if (url.pathname === "/api/lan") {
+    sendJson(res, 200, lanInfo());
+    return;
+  }
+
+  if (url.pathname === "/api/rooms") {
+    sendJson(res, 200, { rooms: rooms.listOpenRooms() });
     return;
   }
 
@@ -65,6 +111,7 @@ const server = http.createServer((req, res) => {
       queue: rooms.queue.snapshot(),
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      lan: lanInfo(),
     });
     return;
   }
@@ -98,11 +145,13 @@ const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
   const sessionId = randomUUID();
+  const lan = lanInfo();
   ws.send(
     JSON.stringify({
       type: "welcome",
       sessionId,
       publicBase: PUBLIC_BASE,
+      lan,
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
     })
@@ -127,7 +176,8 @@ wss.on("connection", (ws) => {
     }
 
     try {
-      const result = rooms.handle(ws, playerId!, msg, PUBLIC_BASE) as Record<string, unknown> | undefined;
+      const inviteBase = inviteBaseFrom(msg, lan);
+      const result = rooms.handle(ws, playerId!, msg, inviteBase) as Record<string, unknown> | undefined;
       if (result && "error" in result && result.error) {
         ws.send(JSON.stringify({ type: "error", error: result.error }));
       } else if (result && "type" in result && result.type !== "ok") {
@@ -150,12 +200,16 @@ wss.on("connection", (ws) => {
 });
 
 setInterval(() => rooms.tickQueue(), 1000);
+setInterval(() => rooms.tickBots(), 650);
 
-server.listen(PORT, () => {
-  console.log(`[poker] http ${PUBLIC_BASE}`);
-  console.log(`[poker] ws   ws://localhost:${PORT}`);
-  console.log(`[poker] queue ${QUEUE_MIN}–${QUEUE_MAX} players / table`);
-  console.log(`[poker] health ${PUBLIC_BASE}/health`);
+// 0.0.0.0 — телефоны в той же Wi‑Fi могут подключиться
+server.listen(PORT, "0.0.0.0", () => {
+  const lan = lanInfo();
+  console.log(`[poker] local  http://localhost:${PORT}`);
+  for (const u of lan.urls) console.log(`[poker] LAN    ${u}`);
+  if (!lan.urls.length) console.log(`[poker] LAN    (нет внешнего IPv4 — проверьте Wi‑Fi)`);
+  console.log(`[poker] queue  ${QUEUE_MIN}–${QUEUE_MAX}`);
+  console.log(`[poker] lan    http://localhost:${PORT}/api/lan`);
 });
 
 export { rooms, server };

@@ -50,7 +50,6 @@ namespace Poker.Presentation
 
         void BuildBetChips(Vector3 toCenter, Vector3 sideways)
         {
-            // Ближе к центру стола и вбок — не наезжает на hole-карты
             Vector3 betPos = toCenter * 1.55f + sideways * 1.4f;
             betPos.y = 0.05f;
 
@@ -80,7 +79,7 @@ namespace Poker.Presentation
                 body.transform.localScale = new Vector3(0.34f, ChipBodyH * 0.5f, 0.34f);
                 SmoothMesh.ReplacePrimitiveMesh(body, SmoothMesh.Cylinder());
                 Object.Destroy(body.GetComponent<Collider>());
-                body.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(red);
+                PokerMaterials.ApplyColor(body.GetComponent<MeshRenderer>(), red);
 
                 var stripe = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 stripe.name = "Stripe";
@@ -89,13 +88,12 @@ namespace Poker.Presentation
                 stripe.transform.localScale = new Vector3(0.36f, StripeH * 0.5f, 0.36f);
                 SmoothMesh.ReplacePrimitiveMesh(stripe, SmoothMesh.Cylinder());
                 Object.Destroy(stripe.GetComponent<Collider>());
-                stripe.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(dark);
+                PokerMaterials.ApplyColor(stripe.GetComponent<MeshRenderer>(), dark);
             }
         }
 
         void BuildDealer(Vector3 toCenter, Vector3 sideways)
         {
-            // С другой стороны от ставок, тоже ближе к центру — не на картах
             Vector3 dealerPos = toCenter * 1.5f - sideways * 1.45f;
             dealerPos.y = 0.08f;
             _dealerButton = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -105,7 +103,7 @@ namespace Poker.Presentation
             _dealerButton.transform.localScale = new Vector3(0.28f, 0.04f, 0.28f);
             SmoothMesh.ReplacePrimitiveMesh(_dealerButton, SmoothMesh.Cylinder());
             Object.Destroy(_dealerButton.GetComponent<Collider>());
-            _dealerButton.GetComponent<MeshRenderer>().material = PokerMaterials.ColorMat(new Color(0.95f, 0.92f, 0.2f));
+            PokerMaterials.ApplyColor(_dealerButton.GetComponent<MeshRenderer>(), new Color(0.95f, 0.92f, 0.2f));
 
             var labelGo = new GameObject("D");
             labelGo.transform.SetParent(_dealerButton.transform, false);
