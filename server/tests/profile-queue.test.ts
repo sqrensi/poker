@@ -44,6 +44,17 @@ describe("ProfileStore", () => {
     expect(p.coins).toBe(DEFAULT_COINS);
   });
 
+  it("applyLocalBalanceHint only decreases server balance", () => {
+    const store = new ProfileStore();
+    store.ensure("a", "Alice");
+    store.chargeBuyIn("a", ONLINE_BUY_IN);
+    expect(store.get("a")!.coins).toBe(DEFAULT_COINS - ONLINE_BUY_IN);
+    store.applyLocalBalanceHint("a", DEFAULT_COINS);
+    expect(store.get("a")!.coins).toBe(DEFAULT_COINS - ONLINE_BUY_IN);
+    store.applyLocalBalanceHint("a", DEFAULT_COINS - ONLINE_BUY_IN * 2);
+    expect(store.get("a")!.coins).toBe(DEFAULT_COINS - ONLINE_BUY_IN * 2);
+  });
+
   it("charges and refunds buy-in", () => {
     const store = new ProfileStore();
     store.ensure("a", "Alice");
@@ -64,13 +75,15 @@ describe("ProfileStore", () => {
     expect(store.get("a")!.wins).toBe(1);
   });
 
-  it("pays winner online pool", () => {
+  it("cashes out chip stack to wallet", () => {
     const store = new ProfileStore();
     store.ensure("w", "Winner");
-    for (let i = 0; i < 4; i++) store.chargeBuyIn("w", ONLINE_BUY_IN);
+    store.chargeBuyIn("w", ONLINE_BUY_IN);
     const before = store.get("w")!.coins;
-    store.payoutOnlineWinner("w", 4 * ONLINE_BUY_IN);
-    expect(store.get("w")!.coins).toBe(before + 4 * ONLINE_BUY_IN);
+    store.cashOutChips("w", 7500);
+    expect(store.get("w")!.coins).toBe(before + 7500);
+    store.cashOutChips("w", 0);
+    expect(store.get("w")!.coins).toBe(before + 7500);
   });
 });
 

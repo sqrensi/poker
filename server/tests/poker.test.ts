@@ -4,6 +4,7 @@ import { evaluateFive, evaluateBest, HandCategory } from "../src/poker/hand.js";
 import { Deck } from "../src/poker/cards.js";
 import { PokerTable, type Player } from "../src/poker/table.js";
 import { Room } from "../src/net/rooms.js";
+import { profiles, ONLINE_BUY_IN } from "../src/profile/store.js";
 
 function C(rank: number, suit: number): Card {
   return { rank: rank as Card["rank"], suit: suit as Card["suit"] };
@@ -149,6 +150,25 @@ describe("PokerTable", () => {
 });
 
 describe("Room", () => {
+  it("cashes out stack when queue player leaves mid-match", () => {
+    profiles.ensure("q1", "One");
+    profiles.ensure("q2", "Two");
+    profiles.chargeBuyIn("q1", ONLINE_BUY_IN);
+    profiles.chargeBuyIn("q2", ONLINE_BUY_IN);
+
+    const room = new Room("QTEST", "q1", { fromQueue: true, chips: ONLINE_BUY_IN });
+    const fakeWs = { readyState: 1, send() {} } as any;
+    expect(room.add(fakeWs, "q1", "One").ok).toBe(true);
+    expect(room.add({ readyState: 1, send() {} } as any, "q2", "Two").ok).toBe(true);
+    expect(room.start()).toBeNull();
+
+    room.table!.players[1].chips = 3200;
+    const before = profiles.get("q2")!.coins;
+    room.forfeitPlayer("q2", "вышел из матча");
+    expect(profiles.get("q2")!.coins).toBe(before + 3200);
+    expect(room.table!.players[1].chips).toBe(0);
+  });
+
   it("creates lobby and starts with 2 players", () => {
     const room = new Room("TEST01", "host");
     const fakeWs = { readyState: 1, send() {} } as any;

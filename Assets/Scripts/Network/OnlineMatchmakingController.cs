@@ -17,6 +17,7 @@ namespace Poker.Network
         MainMenuController _menu;
         bool _enteringGame;
         bool _cancelling;
+        int _coinsBeforeQueue;
 
         public static void StartMatchmaking(MainMenuController menu)
         {
@@ -32,6 +33,7 @@ namespace Poker.Network
 
         void Start()
         {
+            _coinsBeforeQueue = PlayerWalletService.GetCoins();
             UiTheme.WarmUp();
             BuildUi();
 
@@ -141,8 +143,7 @@ namespace Poker.Network
 
         void FinishCancel()
         {
-            if (_client != null && _client.Coins > 0)
-                PlayerWalletService.SetCoins(_client.Coins);
+            PlayerWalletService.SetCoins(_coinsBeforeQueue);
 
             _cancelling = false;
             if (_client != null)

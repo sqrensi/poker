@@ -12,6 +12,7 @@ export interface ClientMsg {
   name?: string;
   nickname?: string;
   playerId?: string;
+  localCoins?: number;
   room?: string;
   action?: ActionType;
   amount?: number;
@@ -45,6 +46,8 @@ export class Room {
   readonly fromQueue: boolean;
   private ratingApplied = false;
   private economyApplied = false;
+  /** Игроки, чей стек уже переведён в монеты (выход или конец матча). */
+  private cashedOut = new Set<string>();
   readonly createdAt = Date.now();
   private readonly startingChips: number;
   private readonly sb: number;
@@ -112,11 +115,22 @@ export class Room {
     }
   }
 
+  /** Переводит текущий стек игрока в монеты (один раз за матч). */
+  private cashOutStack(playerId: string, chips: number) {
+    if (!this.fromQueue || isBotId(playerId) || this.cashedOut.has(playerId)) return;
+    const amount = Math.max(0, Math.floor(chips));
+    if (amount <= 0) return;
+    profiles.cashOutChips(playerId, amount);
+    this.cashedOut.add(playerId);
+  }
+
   forfeitPlayer(playerId: string, reason = "вышел из матча") {
     const conn = this.seats.find((s) => s.playerId === playerId);
     if (!conn) return;
     conn.ws = null;
     if (!this.started || !this.table) return;
+    const stack = this.table.players[conn.seat]?.chips ?? 0;
+    this.cashOutStack(playerId, stack);
     this.table.forfeit(conn.seat, reason);
     this.settleMatch();
   }
@@ -194,18 +208,15 @@ export class Room {
     }
   }
 
-  /** Выплата банка валюты победителю онлайн-матча из очереди. */
+  /** В конце онлайн-матча возвращаем оставшийся стек каждому игроку. */
   maybeApplyEconomy() {
     if (!this.fromQueue || this.economyApplied) return;
     const t = this.table;
     if (!t || t.street !== "matchComplete") return;
-    const winnerId =
-      t.matchWinner >= 0 && t.players[t.matchWinner] ? t.players[t.matchWinner].id : "";
-    if (!winnerId || isBotId(winnerId)) return;
-    const humans = t.players.filter((p) => !isBotId(p.id));
-    if (humans.length < 2) return;
-    const pool = humans.length * ONLINE_BUY_IN;
-    profiles.payoutOnlineWinner(winnerId, pool);
+    for (const p of t.players) {
+      if (isBotId(p.id)) continue;
+      this.cashOutStack(p.id, p.chips);
+    }
     this.economyApplied = true;
   }
 
@@ -458,7 +469,11 @@ export class RoomManager {
     if (msg.type === "auth") {
       const id = (msg.playerId || playerId).trim();
       if (!id) return { error: "Нужен playerId" };
-      const profile = this.bindPlayer(ws, id, msg.nickname ?? msg.name);
+      this.bindPlayer(ws, id, msg.nickname ?? msg.name);
+      if (typeof msg.localCoins === "number" && Number.isFinite(msg.localCoins)) {
+        profiles.applyLocalBalanceHint(id, msg.localCoins);
+      }
+      const profile = profiles.get(id)!;
       return this.profilePayload(profile);
     }
 

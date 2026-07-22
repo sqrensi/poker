@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Poker.Identity;
-using Poker.Identity;
 using UnityEngine;
 
 namespace Poker.Network
@@ -28,6 +27,7 @@ namespace Poker.Network
         public event Action<OnlineProfile> ProfileEvent;
         public event Action<OnlineQueueStatus> QueueStatusEvent;
         public event Action QueueLeftEvent;
+        public event Action LeftEvent;
         public event Action MatchedEvent;
         public event Action<OnlineGameState> StateEvent;
         public event Action<string> ErrorEvent;
@@ -41,7 +41,8 @@ namespace Poker.Network
         public void AuthAndQueue(string playerId, string nickname)
         {
             _wantQueueAfterAuth = true;
-            SendObj($"{{\"type\":\"auth\",\"playerId\":{JsonStr(playerId)},\"nickname\":{JsonStr(nickname)}}}");
+            int localCoins = PlayerWalletService.GetCoins();
+            SendObj($"{{\"type\":\"auth\",\"playerId\":{JsonStr(playerId)},\"nickname\":{JsonStr(nickname)},\"localCoins\":{localCoins}}}");
         }
 
         public void Dequeue() => SendObj("{\"type\":\"dequeue\"}");
@@ -185,6 +186,7 @@ namespace Poker.Network
                         case "left":
                             if (root.TryGetProperty("coins", out var lc) && lc.TryGetInt32(out var lcv))
                                 SyncWalletCoins(lcv);
+                            LeftEvent?.Invoke();
                             break;
                         case "error":
                             ErrorEvent?.Invoke(root.TryGetProperty("error", out var er) ? er.AsString() : "Ошибка");

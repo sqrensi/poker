@@ -117,6 +117,18 @@ export class ProfileStore {
     return p;
   }
 
+  /** Офлайн-траты с клиента: можно только уменьшить баланс на сервере. */
+  applyLocalBalanceHint(playerId: string, localCoins: number): PlayerProfile {
+    const p = this.ensure(playerId);
+    const clamped = Math.max(0, Math.floor(localCoins));
+    if (clamped <= p.coins) {
+      p.coins = clamped;
+      p.updatedAt = Date.now();
+      this.persist();
+    }
+    return p;
+  }
+
   /** Списать взнос в очередь. */
   chargeBuyIn(playerId: string, amount = ONLINE_BUY_IN): { ok: true; coins: number } | { ok: false; error: string } {
     const p = this.ensure(playerId);
@@ -138,12 +150,15 @@ export class ProfileStore {
     return p;
   }
 
-  /** Выплата победителю онлайн-матча (взносы уже списаны при постановке в очередь). */
-  payoutOnlineWinner(winnerId: string, pool: number): PlayerProfile {
-    const p = this.ensure(winnerId);
-    p.coins += pool;
-    p.updatedAt = Date.now();
-    this.persist();
+  /** Вернуть на кошелёк остаток стека после партии (взнос уже списан при входе в очередь). */
+  cashOutChips(playerId: string, chips: number): PlayerProfile {
+    const p = this.ensure(playerId);
+    const amount = Math.max(0, Math.floor(chips));
+    if (amount > 0) {
+      p.coins += amount;
+      p.updatedAt = Date.now();
+      this.persist();
+    }
     return p;
   }
 

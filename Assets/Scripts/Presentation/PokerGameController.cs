@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using Poker.Game;
+using Poker.Identity;
 using Poker.Network;
 
 namespace Poker.Presentation
@@ -592,14 +593,51 @@ namespace Poker.Presentation
 
         void LeaveMatch()
         {
-            ReturnToMenu();
+            if (_onlineMode && _onlineClient != null && _onlineClient.Connected)
+                StartCoroutine(ExitOnlineAndReturn());
+            else
+                FinishReturnToMenu();
+        }
+
+        System.Collections.IEnumerator ExitOnlineAndReturn()
+        {
+            bool done = false;
+            void OnLeft() => done = true;
+            _onlineClient.LeftEvent += OnLeft;
+            _onlineClient.LeaveMatch();
+            float t = 0f;
+            while (!done && t < 2.5f)
+            {
+                t += Time.deltaTime;
+                yield return null;
+            }
+            if (_onlineClient != null)
+                _onlineClient.LeftEvent -= OnLeft;
+            FinishReturnToMenu(skipOnlineLeave: true);
+        }
+
+        void FinishReturnToMenu(bool skipOnlineLeave = false)
+        {
+            CashOutOfflineStack();
+            CleanupMatch(skipOnlineLeave);
+            Destroy(gameObject);
+            Poker.Menu.MainMenuController.Open();
+        }
+
+        void CashOutOfflineStack()
+        {
+            if (_onlineMode || _table == null) return;
+            foreach (var p in _table.Players)
+            {
+                if (p.Type != PlayerType.Human || p.Chips <= 0) continue;
+                PlayerWalletService.AddCoins(p.Chips);
+                break;
+            }
         }
 
         void ReturnToMenu()
         {
-            CleanupMatch();
-            Destroy(gameObject);
-            Poker.Menu.MainMenuController.Open();
+            LeaveMatch();
         }
 
         void OnRematch()
@@ -612,16 +650,16 @@ namespace Poker.Presentation
             RefreshAll();
         }
 
-        void CleanupMatch()
+        void CleanupMatch(bool skipOnlineLeave = false)
         {
             ExitRaiseMode();
             if (_winnerOverlay != null) _winnerOverlay.Hide();
             if (_onlineMode && _onlineClient != null)
             {
                 _onlineClient.StateEvent -= OnOnlineState;
-                if (_onlineClient.Connected)
+                if (!skipOnlineLeave && _onlineClient.Connected)
                     _onlineClient.LeaveMatch();
-                else
+                else if (!skipOnlineLeave)
                     _onlineClient.Disconnect();
                 _onlineClient = null;
             }

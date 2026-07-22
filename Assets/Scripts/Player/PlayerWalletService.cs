@@ -23,6 +23,12 @@ namespace Poker.Identity
             PlayerPrefs.Save();
         }
 
+        public static void AddCoins(int amount)
+        {
+            if (amount <= 0) return;
+            SetCoins(GetCoins() + amount);
+        }
+
         public static bool CanAffordBuyIn() => GetCoins() >= GameBuyIn;
 
         public static bool TryChargeBuyIn(out string error)
