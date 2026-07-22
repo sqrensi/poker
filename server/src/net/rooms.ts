@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import { cardCode } from "../poker/cards.js";
 import { PokerTable } from "../poker/table.js";
 import type { ActionType, Player } from "../poker/table.js";
-import { profiles, type PlayerProfile } from "../profile/store.js";
+import { profiles, type PlayerProfile, ONLINE_BUY_IN } from "../profile/store.js";
 import { MatchQueue, QUEUE_MAX, QUEUE_MIN } from "./queue.js";
 import { decideBot, isBotId } from "./bot.js";
 
@@ -44,6 +44,7 @@ export class Room {
   /** Стол из очереди — старт автоматом, без ручного хоста. */
   readonly fromQueue: boolean;
   private ratingApplied = false;
+  private economyApplied = false;
   readonly createdAt = Date.now();
   private readonly startingChips: number;
   private readonly sb: number;
@@ -130,6 +131,7 @@ export class Room {
     this.table = new PokerTable(players, this.sb, this.bb);
     this.started = true;
     this.ratingApplied = false;
+    this.economyApplied = false;
     this.table.startHand();
     return null;
   }
@@ -148,6 +150,7 @@ export class Room {
       return "Можно перезапустить после раздачи или конца матча";
     }
     this.ratingApplied = false;
+    this.economyApplied = false;
     this.table.restartMatch();
     return null;
   }
@@ -160,7 +163,7 @@ export class Room {
     const prev = this.table.street;
     const ok = this.table.apply(seat.seat, action, amount);
     if (!ok) return "Недопустимое действие";
-    this.maybeApplyRating(prev);
+    this.settleMatch();
     return null;
   }
 
@@ -176,11 +179,30 @@ export class Room {
     if (ids.length < 2) return;
     profiles.applyMatchResult(ids, winnerId);
     this.ratingApplied = true;
-    // refresh seat ratings for UI
     for (const s of this.seats) {
       const p = profiles.get(s.playerId);
       if (p) s.rating = p.rating;
     }
+  }
+
+  /** Выплата банка валюты победителю онлайн-матча из очереди. */
+  maybeApplyEconomy() {
+    if (!this.fromQueue || this.economyApplied) return;
+    const t = this.table;
+    if (!t || t.street !== "matchComplete") return;
+    const winnerId =
+      t.matchWinner >= 0 && t.players[t.matchWinner] ? t.players[t.matchWinner].id : "";
+    if (!winnerId || isBotId(winnerId)) return;
+    const humans = t.players.filter((p) => !isBotId(p.id));
+    if (humans.length < 2) return;
+    const pool = humans.length * ONLINE_BUY_IN;
+    profiles.payoutOnlineWinner(winnerId, pool);
+    this.economyApplied = true;
+  }
+
+  settleMatch() {
+    this.maybeApplyRating();
+    this.maybeApplyEconomy();
   }
 
   snapshotFor(viewerId: string) {
@@ -194,6 +216,8 @@ export class Room {
       hostId: this.hostId,
       fromQueue: this.fromQueue,
       you: viewerId,
+      coins: profiles.get(viewerId)?.coins ?? 0,
+      buyIn: ONLINE_BUY_IN,
       lobby: this.seats.map((s) => {
         const p = s.isBot ? null : profiles.get(s.playerId);
         return {
@@ -266,7 +290,7 @@ export class Room {
       else if (legal?.canCall) this.table.apply(seat, "call");
       else if (legal?.canFold) this.table.apply(seat, "fold");
     }
-    this.maybeApplyRating();
+    this.settleMatch();
     return true;
   }
 }
@@ -295,7 +319,8 @@ export class RoomManager {
   }
 
   create(ws: WebSocket, playerId: string, name: string, publicBase: string) {
-    this.queue.dequeue(playerId);
+    const removed = this.queue.dequeue(playerId);
+    if (removed) this.refundQueueEntry(removed);
     let code = roomCode();
     while (this.rooms.has(code)) code = roomCode();
     const room = new Room(code, playerId);
@@ -338,7 +363,8 @@ export class RoomManager {
   }
 
   join(ws: WebSocket, playerId: string, name: string, code: string) {
-    this.queue.dequeue(playerId);
+    const removed = this.queue.dequeue(playerId);
+    if (removed) this.refundQueueEntry(removed);
     const room = this.rooms.get(code.toUpperCase());
     if (!room) return { error: "Комната не найдена" };
     const joined = room.add(ws, playerId, name);
@@ -355,7 +381,7 @@ export class RoomManager {
       let code = roomCode();
       while (this.rooms.has(code)) code = roomCode();
       const hostId = batch.players[0].playerId;
-      const room = new Room(code, hostId, { fromQueue: true });
+      const room = new Room(code, hostId, { fromQueue: true, chips: ONLINE_BUY_IN });
       this.rooms.set(code, room);
 
       for (const e of batch.players) {
@@ -368,10 +394,12 @@ export class RoomManager {
       const err = room.start();
       if (err) {
         for (const e of batch.players) {
+          if (e.buyInPaid) profiles.refundBuyIn(e.playerId, ONLINE_BUY_IN);
           if (e.ws.readyState === 1) {
             e.ws.send(JSON.stringify({ type: "error", error: err }));
           }
         }
+        this.rooms.delete(code);
         continue;
       }
 
@@ -395,8 +423,26 @@ export class RoomManager {
       if (this.wsRoom.has(ws)) continue;
       const st = this.queue.statusFor(playerId);
       if (!st || ws.readyState !== 1) continue;
-      ws.send(JSON.stringify({ type: "queue_status", ...st }));
+      ws.send(JSON.stringify({ type: "queue_status", buyIn: ONLINE_BUY_IN, ...st }));
     }
+  }
+
+  profilePayload(p: PlayerProfile) {
+    return {
+      type: "profile" as const,
+      playerId: p.playerId,
+      nickname: p.nickname,
+      rating: p.rating,
+      coins: p.coins,
+      matches: p.matches,
+      wins: p.wins,
+      buyIn: ONLINE_BUY_IN,
+    };
+  }
+
+  refundQueueEntry(entry: { playerId: string; buyInPaid: boolean }) {
+    if (!entry.buyInPaid) return;
+    profiles.refundBuyIn(entry.playerId, ONLINE_BUY_IN);
   }
 
   handle(ws: WebSocket, playerId: string, msg: ClientMsg, publicBase: string) {
@@ -404,14 +450,7 @@ export class RoomManager {
       const id = (msg.playerId || playerId).trim();
       if (!id) return { error: "Нужен playerId" };
       const profile = this.bindPlayer(ws, id, msg.nickname ?? msg.name);
-      return {
-        type: "profile",
-        playerId: profile.playerId,
-        nickname: profile.nickname,
-        rating: profile.rating,
-        matches: profile.matches,
-        wins: profile.wins,
-      };
+      return this.profilePayload(profile);
     }
 
     if (msg.type === "set_nickname") {
@@ -419,19 +458,14 @@ export class RoomManager {
       const p = profiles.setNickname(playerId, nick);
       if (!p) return { error: "Ник занят или неверный (3–16: буквы, цифры, _ -)" };
       this.wsProfile.set(ws, p);
-      return {
-        type: "profile",
-        playerId: p.playerId,
-        nickname: p.nickname,
-        rating: p.rating,
-        matches: p.matches,
-        wins: p.wins,
-      };
+      return this.profilePayload(p);
     }
 
     if (msg.type === "queue") {
       if (this.wsRoom.has(ws)) return { error: "Сначала выйдите из комнаты" };
       const profile = profiles.ensure(playerId, msg.nickname ?? msg.name);
+      const charge = profiles.chargeBuyIn(profile.playerId, ONLINE_BUY_IN);
+      if (!charge.ok) return { error: charge.error };
       const ticketId = randomUUID();
       const enq = this.queue.enqueue({
         ticketId,
@@ -439,17 +473,29 @@ export class RoomManager {
         nickname: profile.nickname,
         rating: profile.rating,
         ws,
+        buyInPaid: true,
       });
-      if (!enq.ok) return { error: enq.error };
+      if (!enq.ok) {
+        profiles.refundBuyIn(profile.playerId, ONLINE_BUY_IN);
+        return { error: enq.error };
+      }
       this.formMatchedTables();
       this.broadcastQueueStatuses();
+      const updated = profiles.get(profile.playerId)!;
       const st = this.queue.statusFor(profile.playerId);
-      return { type: "queue_status", ...(st || { ticketId, position: 0, queueSize: 0 }) };
+      return {
+        type: "queue_status",
+        coins: updated.coins,
+        buyIn: ONLINE_BUY_IN,
+        ...(st || { ticketId, position: 0, queueSize: 0, playersNeeded: QUEUE_MAX }),
+      };
     }
 
     if (msg.type === "dequeue") {
-      this.queue.dequeue(playerId);
-      return { type: "queue_left" };
+      const removed = this.queue.dequeue(playerId);
+      if (removed) this.refundQueueEntry(removed);
+      const p = profiles.get(playerId);
+      return { type: "queue_left", coins: p?.coins ?? 0 };
     }
 
     if (msg.type === "leaderboard") {
@@ -500,7 +546,7 @@ export class RoomManager {
       if (playerId !== room.hostId) return { error: "Только хост" };
       const err = room.nextHand();
       if (err) return { error: err };
-      room.maybeApplyRating();
+      room.settleMatch();
       room.broadcast();
       return { type: "ok" };
     }
@@ -535,7 +581,8 @@ export class RoomManager {
   }
 
   disconnect(ws: WebSocket) {
-    this.queue.removeByWs(ws);
+    const removed = this.queue.removeByWs(ws);
+    for (const e of removed) this.refundQueueEntry(e);
     const code = this.wsRoom.get(ws);
     const playerId = this.wsPlayer.get(ws);
     this.wsRoom.delete(ws);

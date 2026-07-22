@@ -45,7 +45,7 @@ namespace Poker.Identity
             return list;
         }
 
-        public static string BuildUrl(string hostOrUrl, string playerId)
+        public static string BuildUrl(string hostOrUrl, string playerId, bool autoQueue = false)
         {
             string raw = (hostOrUrl ?? "").Trim();
             if (string.IsNullOrEmpty(raw)) raw = "127.0.0.1";
@@ -59,8 +59,13 @@ namespace Poker.Identity
                     raw = "http://" + raw;
             }
             raw = raw.TrimEnd('/');
-            string sep = raw.Contains("?") ? "&" : "?";
-            return $"{raw}{sep}pid={System.Uri.EscapeDataString(playerId ?? "")}";
+            var q = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrEmpty(playerId))
+                q.Add("pid=" + System.Uri.EscapeDataString(playerId));
+            if (autoQueue)
+                q.Add("queue=1");
+            if (q.Count == 0) return raw;
+            return raw + "?" + string.Join("&", q);
         }
     }
 }

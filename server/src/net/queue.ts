@@ -1,9 +1,9 @@
 import type { WebSocket } from "ws";
 
-export const QUEUE_MIN = 2;
-export const QUEUE_MAX = 10;
-/** Сколько ждать добора до макс. стола после появления минимума. */
-export const QUEUE_FILL_MS = 12_000;
+/** Онлайн-матч: ровно 4 игрока из очереди. */
+export const QUEUE_MIN = 4;
+export const QUEUE_MAX = 4;
+export const QUEUE_FILL_MS = 0;
 
 export interface QueueEntry {
   ticketId: string;
@@ -12,6 +12,7 @@ export interface QueueEntry {
   rating: number;
   ws: WebSocket;
   enqueuedAt: number;
+  buyInPaid: boolean;
 }
 
 export interface MatchedTable {
@@ -19,10 +20,7 @@ export interface MatchedTable {
 }
 
 /**
- * Упрощённый FIFO-матчмейкинг под покер:
- * — без worker pool / снапшотов
- * — стол 2–10 человек
- * — при 10 — сразу; при ≥2 — через FILL_MS добора
+ * FIFO-матчмейкинг: как только в очереди 4 человека — отдельный стол.
  */
 export class MatchQueue {
   private queue: QueueEntry[] = [];
@@ -45,36 +43,29 @@ export class MatchQueue {
     return { ok: true };
   }
 
-  dequeue(playerId: string): boolean {
+  dequeue(playerId: string): QueueEntry | null {
     const i = this.queue.findIndex((e) => e.playerId === playerId);
-    if (i < 0) return false;
-    this.queue.splice(i, 1);
-    return true;
+    if (i < 0) return null;
+    const [removed] = this.queue.splice(i, 1);
+    return removed ?? null;
   }
 
-  removeByWs(ws: WebSocket) {
+  removeByWs(ws: WebSocket): QueueEntry[] {
+    const removed = this.queue.filter((e) => e.ws === ws);
     this.queue = this.queue.filter((e) => e.ws !== ws);
+    return removed;
   }
 
-  /** Достаёт готовые столы (может быть несколько). */
-  tryMatch(now = Date.now()): MatchedTable[] {
+  /** Достаёт готовые столы (может быть несколько за один тик). */
+  tryMatch(_now = Date.now()): MatchedTable[] {
     const out: MatchedTable[] = [];
-    while (this.queue.length >= QUEUE_MIN) {
-      const oldest = this.queue[0];
-      const waited = now - oldest.enqueuedAt;
-      const canFill = this.queue.length >= QUEUE_MAX;
-      const timedFill = this.queue.length >= QUEUE_MIN && waited >= QUEUE_FILL_MS;
-      if (!canFill && !timedFill) break;
-
-      const take = Math.min(QUEUE_MAX, this.queue.length);
-      // Не начинать с 1 — уже гарантировано >= MIN
-      const batch = this.queue.splice(0, take);
+    while (this.queue.length >= QUEUE_MAX) {
+      const batch = this.queue.splice(0, QUEUE_MAX);
       out.push({ players: batch });
     }
     return out;
   }
 
-  /** Статус для UI. */
   statusFor(playerId: string) {
     const idx = this.queue.findIndex((e) => e.playerId === playerId);
     if (idx < 0) return null;
@@ -86,6 +77,7 @@ export class MatchQueue {
       waitedSec: Math.floor((Date.now() - e.enqueuedAt) / 1000),
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      playersNeeded: Math.max(0, QUEUE_MAX - this.queue.length),
     };
   }
 
@@ -94,6 +86,7 @@ export class MatchQueue {
       queueSize: this.queue.length,
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      playersNeeded: Math.max(0, QUEUE_MAX - this.queue.length),
     };
   }
 }

@@ -40,7 +40,7 @@
       </div>
       <div class="player-chip glass" id="playerChip">
         <div class="chip-nick" id="chipNick">—</div>
-        <div class="chip-meta"><span id="chipRating">1000</span> MMR</div>
+        <div class="chip-meta"><span id="chipCoins">50000</span> монет · <span id="chipRating">1000</span> MMR</div>
       </div>
     </header>
 
@@ -48,7 +48,7 @@
       <div class="stage-hero">
         <p class="eyebrow">Онлайн</p>
         <h2 class="display">Играть онлайн</h2>
-        <p class="lede">Создайте стол или подключитесь к комнате, где уже ждут игроки.</p>
+        <p class="lede">Поиск матча на 4 игрока. Взнос — 1000 монет, стартовый баланс — 50000.</p>
 
         <label class="field">Ник
           <div class="nick-row">
@@ -61,8 +61,34 @@
 
         <div class="cta-stack">
           <button id="btnGoOnline" class="primary xl">Играть онлайн</button>
+          <button id="btnPrivateRooms" class="soft xl">Приватная комната</button>
         </div>
         <p id="lobbyErr" class="error"></p>
+      </div>
+    </section>
+
+    <section id="queue" class="panel glass stage hidden">
+      <button type="button" id="btnCancelQueue" class="ghost back">← Отменить поиск</button>
+      <div class="stage-hero center">
+        <p class="eyebrow">Матчмейкинг</p>
+        <h2 class="display">Поиск игроков</h2>
+        <div class="queue-stats glass">
+          <div class="queue-stat">
+            <span class="queue-stat-val" id="queueCount">0</span>
+            <span class="queue-stat-label">в очереди</span>
+          </div>
+          <div class="queue-stat">
+            <span class="queue-stat-val" id="queueNeed">4</span>
+            <span class="queue-stat-label">нужно для старта</span>
+          </div>
+          <div class="queue-stat">
+            <span class="queue-stat-val" id="queueWait">0</span>
+            <span class="queue-stat-label">сек ожидания</span>
+          </div>
+        </div>
+        <p id="queueHint" class="lede">Списано 1000 монет. Как только наберётся 4 игрока — матч начнётся автоматически.</p>
+        <div class="queue-pulse" aria-hidden="true"></div>
+        <p id="queueErr" class="error"></p>
       </div>
     </section>
 
@@ -107,7 +133,7 @@
 
       <div class="lobby-grid">
         <div>
-          <h3 class="section-label">За столом · <span id="playerCount">0</span>/<span id="maxSeats">10</span></h3>
+          <h3 class="section-label">За столом · <span id="playerCount">0</span>/<span id="maxSeats">4</span></h3>
           <div id="lobbyList" class="lobby-list"></div>
         </div>
         <div class="host-panel glass" id="hostPanel">

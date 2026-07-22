@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ProfileStore, DEFAULT_RATING } from "../src/profile/store.js";
-import { MatchQueue, QUEUE_FILL_MS, QUEUE_MAX } from "../src/net/queue.js";
+import {
+  ProfileStore,
+  DEFAULT_RATING,
+  DEFAULT_COINS,
+  ONLINE_BUY_IN,
+} from "../src/profile/store.js";
+import { MatchQueue, QUEUE_MAX } from "../src/net/queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataPath = path.join(__dirname, "..", "data", "profiles.json");
@@ -16,11 +21,22 @@ describe("ProfileStore", () => {
     if (fs.existsSync(dataPath)) fs.unlinkSync(dataPath);
   });
 
-  it("creates profile with default rating", () => {
+  it("creates profile with default rating and coins", () => {
     const store = new ProfileStore();
     const p = store.ensure("player-abc", "Тестер");
     expect(p.nickname).toBe("Тестер");
     expect(p.rating).toBe(DEFAULT_RATING);
+    expect(p.coins).toBe(DEFAULT_COINS);
+  });
+
+  it("charges and refunds buy-in", () => {
+    const store = new ProfileStore();
+    store.ensure("a", "Alice");
+    const charge = store.chargeBuyIn("a", ONLINE_BUY_IN);
+    expect(charge.ok).toBe(true);
+    if (charge.ok) expect(charge.coins).toBe(DEFAULT_COINS - ONLINE_BUY_IN);
+    const p = store.refundBuyIn("a", ONLINE_BUY_IN);
+    expect(p.coins).toBe(DEFAULT_COINS);
   });
 
   it("updates rating after match", () => {
@@ -32,10 +48,19 @@ describe("ProfileStore", () => {
     expect(store.get("b")!.rating).toBeLessThan(DEFAULT_RATING);
     expect(store.get("a")!.wins).toBe(1);
   });
+
+  it("pays winner online pool", () => {
+    const store = new ProfileStore();
+    store.ensure("w", "Winner");
+    for (let i = 0; i < 4; i++) store.chargeBuyIn("w", ONLINE_BUY_IN);
+    const before = store.get("w")!.coins;
+    store.payoutOnlineWinner("w", 4 * ONLINE_BUY_IN);
+    expect(store.get("w")!.coins).toBe(before + 4 * ONLINE_BUY_IN);
+  });
 });
 
 describe("MatchQueue", () => {
-  it("matches at max table size", () => {
+  it("matches exactly 4 players", () => {
     const q = new MatchQueue();
     const fakeWs = { readyState: 1 } as any;
     for (let i = 0; i < QUEUE_MAX; i++) {
@@ -45,6 +70,7 @@ describe("MatchQueue", () => {
         nickname: `N${i}`,
         rating: 1000,
         ws: fakeWs,
+        buyInPaid: true,
       });
     }
     const tables = q.tryMatch();
@@ -53,14 +79,20 @@ describe("MatchQueue", () => {
     expect(q.size).toBe(0);
   });
 
-  it("matches after fill timeout with min players", () => {
+  it("does not match with fewer than 4", () => {
     const q = new MatchQueue();
     const fakeWs = { readyState: 1 } as any;
-    q.enqueue({ ticketId: "t0", playerId: "p0", nickname: "A", rating: 1000, ws: fakeWs });
-    q.enqueue({ ticketId: "t1", playerId: "p1", nickname: "B", rating: 1000, ws: fakeWs });
-    expect(q.tryMatch(Date.now()).length).toBe(0);
-    const tables = q.tryMatch(Date.now() + QUEUE_FILL_MS + 1);
-    expect(tables.length).toBe(1);
-    expect(tables[0].players.length).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      q.enqueue({
+        ticketId: `t${i}`,
+        playerId: `p${i}`,
+        nickname: `N${i}`,
+        rating: 1000,
+        ws: fakeWs,
+        buyInPaid: true,
+      });
+    }
+    expect(q.tryMatch().length).toBe(0);
+    expect(q.size).toBe(3);
   });
 });

@@ -165,7 +165,7 @@ namespace Poker.Menu
             string id = PlayerIdentityService.GetOrCreatePlayerId();
             string host = LanAddressUtil.GetSavedHost();
             if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
-            Application.OpenURL(LanAddressUtil.BuildUrl(host, id));
+            Application.OpenURL(LanAddressUtil.BuildUrl(host, id, autoQueue: true));
         }
 
         static Button CreatePillButton(Transform parent, string label, Vector2 pos,

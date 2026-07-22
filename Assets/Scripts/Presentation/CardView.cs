@@ -11,8 +11,16 @@ namespace Poker.Presentation
         Card _card;
         float _width = 0.78f;
         float _seatYaw;
+        Vector3 _closedPos;
+        Vector3 _revealPos;
 
-        public static CardView Create(Transform parent, Vector3 localPos, float yawDegrees = 0f, float width = 0.78f, int sortingOrder = 10)
+        public static CardView Create(
+            Transform parent,
+            Vector3 localPos,
+            float yawDegrees = 0f,
+            float width = 0.78f,
+            int sortingOrder = 10,
+            Vector3? revealLocalPos = null)
         {
             CardSpriteCatalog.EnsureLoaded();
 
@@ -24,6 +32,8 @@ namespace Poker.Presentation
             var view = root.AddComponent<CardView>();
             view._width = width;
             view._seatYaw = yawDegrees;
+            view._closedPos = localPos;
+            view._revealPos = revealLocalPos ?? localPos;
             view.ApplyYaw(yawDegrees);
             view.BuildVisuals(sortingOrder);
             view.ShowBack();
@@ -36,11 +46,12 @@ namespace Poker.Presentation
         }
 
         /// <summary>
-        /// faceTowardViewer: при вскрытии — лицом к камере (как у героя), иначе ориентация места.
+        /// При вскрытии — лицом к камере; для боковых ещё выстраивает в ряд по X.
         /// </summary>
         public void SetFacingViewer(bool faceTowardViewer)
         {
             ApplyYaw(faceTowardViewer ? 0f : _seatYaw);
+            transform.localPosition = faceTowardViewer ? _revealPos : _closedPos;
         }
 
         void BuildVisuals(int sortingOrder)

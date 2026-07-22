@@ -7,6 +7,8 @@ const DATA_DIR = path.join(__dirname, "..", "..", "data");
 const STORE_PATH = path.join(DATA_DIR, "profiles.json");
 
 export const DEFAULT_RATING = 1000;
+export const DEFAULT_COINS = 50_000;
+export const ONLINE_BUY_IN = 1_000;
 export const MIN_NICK = 3;
 export const MAX_NICK = 16;
 
@@ -14,6 +16,7 @@ export interface PlayerProfile {
   playerId: string;
   nickname: string;
   rating: number;
+  coins: number;
   matches: number;
   wins: number;
   updatedAt: number;
@@ -23,12 +26,30 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+function normalizeProfile(raw: Partial<PlayerProfile> & { playerId: string }): PlayerProfile {
+  return {
+    playerId: raw.playerId,
+    nickname: raw.nickname || "Игрок",
+    rating: typeof raw.rating === "number" ? raw.rating : DEFAULT_RATING,
+    coins: typeof raw.coins === "number" ? raw.coins : DEFAULT_COINS,
+    matches: typeof raw.matches === "number" ? raw.matches : 0,
+    wins: typeof raw.wins === "number" ? raw.wins : 0,
+    updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
+  };
+}
+
 function loadAll(): Record<string, PlayerProfile> {
   ensureDir();
   if (!fs.existsSync(STORE_PATH)) return {};
   try {
     const raw = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
-    return raw && typeof raw === "object" ? raw : {};
+    if (!raw || typeof raw !== "object") return {};
+    const out: Record<string, PlayerProfile> = {};
+    for (const [id, p] of Object.entries(raw)) {
+      if (!p || typeof p !== "object") continue;
+      out[id] = normalizeProfile({ ...(p as PlayerProfile), playerId: id });
+    }
+    return out;
   } catch {
     return {};
   }
@@ -73,6 +94,7 @@ export class ProfileStore {
       playerId,
       nickname: sanitizeNickname(nickname, `Игрок_${short}`),
       rating: DEFAULT_RATING,
+      coins: DEFAULT_COINS,
       matches: 0,
       wins: 0,
       updatedAt: Date.now(),
@@ -90,6 +112,36 @@ export class ProfileStore {
     );
     if (taken) return null;
     p.nickname = nickname.trim();
+    p.updatedAt = Date.now();
+    this.persist();
+    return p;
+  }
+
+  /** Списать взнос в очередь. */
+  chargeBuyIn(playerId: string, amount = ONLINE_BUY_IN): { ok: true; coins: number } | { ok: false; error: string } {
+    const p = this.ensure(playerId);
+    if (p.coins < amount) {
+      return { ok: false, error: `Недостаточно монет (нужно ${amount}, у вас ${p.coins})` };
+    }
+    p.coins -= amount;
+    p.updatedAt = Date.now();
+    this.persist();
+    return { ok: true, coins: p.coins };
+  }
+
+  /** Вернуть взнос при отмене поиска / disconnect до матча. */
+  refundBuyIn(playerId: string, amount = ONLINE_BUY_IN): PlayerProfile {
+    const p = this.ensure(playerId);
+    p.coins += amount;
+    p.updatedAt = Date.now();
+    this.persist();
+    return p;
+  }
+
+  /** Выплата победителю онлайн-матча (взносы уже списаны при постановке в очередь). */
+  payoutOnlineWinner(winnerId: string, pool: number): PlayerProfile {
+    const p = this.ensure(winnerId);
+    p.coins += pool;
     p.updatedAt = Date.now();
     this.persist();
     return p;

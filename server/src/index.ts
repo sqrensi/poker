@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { RoomManager } from "./net/rooms.js";
 import type { ClientMsg } from "./net/rooms.js";
-import { profiles } from "./profile/store.js";
+import { profiles, ONLINE_BUY_IN } from "./profile/store.js";
 import { QUEUE_MAX, QUEUE_MIN } from "./net/queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -111,6 +111,8 @@ const server = http.createServer((req, res) => {
       queue: rooms.queue.snapshot(),
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      buyIn: ONLINE_BUY_IN,
+      startingCoins: 50000,
       lan: lanInfo(),
     });
     return;
@@ -154,6 +156,8 @@ wss.on("connection", (ws) => {
       lan,
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      buyIn: ONLINE_BUY_IN,
+      startingCoins: 50000,
     })
   );
 

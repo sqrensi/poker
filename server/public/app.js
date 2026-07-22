@@ -8,13 +8,17 @@ const state = {
   playerId: null,
   nickname: "",
   rating: 1000,
+  coins: 50000,
+  buyIn: 1000,
   room: null,
   isHost: false,
+  inQueue: false,
   last: null,
   view: "home",
-  maxPlayers: 10,
+  maxPlayers: 4,
   nickDirty: false,
   roomsTimer: null,
+  autoQueue: false,
 };
 
 function wsUrl() {
@@ -53,11 +57,12 @@ function escapeHtml(s) {
 function updateChip() {
   $("chipNick").textContent = state.nickname || "Игрок";
   $("chipRating").textContent = String(state.rating ?? 1000);
+  if ($("chipCoins")) $("chipCoins").textContent = String(state.coins ?? 0);
 }
 
 function setView(view) {
   state.view = view;
-  const views = ["home", "onlineHub", "rooms", "waiting", "table"];
+  const views = ["home", "queue", "onlineHub", "rooms", "waiting", "table"];
   for (const v of views) {
     const el = $(v);
     if (el) el.classList.toggle("hidden", v !== view);
@@ -92,6 +97,43 @@ function stopRoomsPoll() {
 
 function refreshRooms() {
   send({ type: "list_rooms" });
+}
+
+function renderQueueStatus(msg) {
+  state.inQueue = true;
+  setView("queue");
+  if ($("queueErr")) $("queueErr").textContent = "";
+  if (typeof msg.coins === "number") state.coins = msg.coins;
+  updateChip();
+  const size = msg.queueSize ?? 0;
+  const need = msg.playersNeeded ?? Math.max(0, state.maxPlayers - size);
+  if ($("queueCount")) $("queueCount").textContent = String(size);
+  if ($("queueNeed")) $("queueNeed").textContent = String(need);
+  if ($("queueWait")) $("queueWait").textContent = String(msg.waitedSec ?? 0);
+  if ($("queueHint")) {
+    $("queueHint").textContent =
+      need > 0
+        ? `В очереди ${size} из ${state.maxPlayers}. Взнос ${state.buyIn} монет уже списан.`
+        : "Собираем стол…";
+  }
+}
+
+function startQueueSearch() {
+  $("lobbyErr").textContent = "";
+  if ($("queueErr")) $("queueErr").textContent = "";
+  if (state.inQueue) {
+    setView("queue");
+    return;
+  }
+  send({ type: "queue", nickname: state.nickname || $("name").value || "Игрок" });
+}
+
+function cancelQueueSearch() {
+  if (!state.inQueue) {
+    setView("home");
+    return;
+  }
+  send({ type: "dequeue" });
 }
 
 function renderRoomList(rooms) {
@@ -131,6 +173,7 @@ function connect() {
     ws.onerror = () => reject(new Error("Не удалось подключиться к серверу"));
     ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     ws.onclose = () => {
+      state.inQueue = false;
       const err = $("lobbyErr");
       if (err && state.view !== "table") err.textContent = "Соединение закрыто. Обновите страницу.";
     };
@@ -139,7 +182,8 @@ function connect() {
 
 function onMessage(msg) {
   if (msg.type === "welcome") {
-    state.maxPlayers = msg.maxPlayers ?? 10;
+    state.maxPlayers = msg.maxPlayers ?? 4;
+    state.buyIn = msg.buyIn ?? 1000;
     if ($("maxSeats")) $("maxSeats").textContent = String(state.maxPlayers);
     const nick = localStorage.getItem(LS_NICK) || $("name").value || "";
     send({ type: "auth", playerId: state.playerId, nickname: nick });
@@ -150,6 +194,8 @@ function onMessage(msg) {
     state.playerId = msg.playerId;
     state.nickname = msg.nickname;
     state.rating = msg.rating;
+    state.coins = msg.coins ?? state.coins;
+    state.buyIn = msg.buyIn ?? state.buyIn;
     localStorage.setItem(LS_ID, msg.playerId);
     localStorage.setItem(LS_NICK, msg.nickname);
     $("name").value = msg.nickname;
@@ -164,17 +210,44 @@ function onMessage(msg) {
 
     const params = new URLSearchParams(location.search);
     const roomFromUrl = (params.get("room") || "").toUpperCase();
+    const wantQueue = params.get("queue") === "1" || state.autoQueue;
+
     if (roomFromUrl && !state.room) {
       send({ type: "join", room: roomFromUrl, name: msg.nickname });
+    } else if (wantQueue && !state.inQueue && !state.room) {
+      startQueueSearch();
     }
     return;
   }
 
   if (msg.type === "error") {
     const target =
-      state.view === "rooms" ? $("roomsErr") : $("lobbyErr") || $("roomsErr") || $("startHint");
+      state.view === "queue"
+        ? $("queueErr")
+        : state.view === "rooms"
+          ? $("roomsErr")
+          : $("lobbyErr") || $("roomsErr") || $("startHint");
     if (target) target.textContent = msg.error || "Ошибка";
     if ($("nickHint") && msg.error) $("nickHint").textContent = msg.error;
+    return;
+  }
+
+  if (msg.type === "queue_status") {
+    renderQueueStatus(msg);
+    return;
+  }
+
+  if (msg.type === "queue_left") {
+    state.inQueue = false;
+    if (typeof msg.coins === "number") state.coins = msg.coins;
+    updateChip();
+    setView("home");
+    return;
+  }
+
+  if (msg.type === "matched") {
+    state.inQueue = false;
+    if ($("queueHint")) $("queueHint").textContent = "Матч найден! Загружаем стол…";
     return;
   }
 
@@ -184,6 +257,7 @@ function onMessage(msg) {
   }
 
   if (msg.type === "created" || msg.type === "joined") {
+    state.inQueue = false;
     state.room = msg.code;
     state.isHost = msg.type === "created";
     history.replaceState({}, "", `/?room=${msg.code}`);
@@ -207,6 +281,7 @@ function onMessage(msg) {
     state.last = msg;
     state.room = msg.code;
     state.isHost = msg.hostId === state.playerId;
+    if (typeof msg.coins === "number") state.coins = msg.coins;
     render(msg);
   }
 }
@@ -268,7 +343,7 @@ function render(msg) {
     $("btnAddBot").classList.toggle("hidden", !canAddBot);
 
     if (msg.fromQueue) {
-      $("startHint").textContent = "Стол собран — старт…";
+      $("startHint").textContent = "Онлайн-матч — старт автоматически.";
     } else if (state.isHost) {
       if (msg.lobby.length < 2) {
         $("startHint").textContent = "Нужен ещё игрок или бот.";
@@ -392,17 +467,24 @@ function render(msg) {
 
   const matchOver = t.street === "matchComplete";
   $("btnNext").classList.toggle("hidden", !(state.isHost && t.street === "handComplete"));
-  $("btnRematch").classList.toggle("hidden", !(state.isHost && matchOver));
+  $("btnRematch").classList.toggle("hidden", !(state.isHost && matchOver && !msg.fromQueue));
 
   const banner = $("matchBanner");
   if (matchOver) {
     banner.classList.remove("hidden");
     const w = t.players.find((p) => p.seat === t.matchWinner);
+    const pool = msg.fromQueue ? state.maxPlayers * state.buyIn : 0;
     banner.textContent = w
       ? w.id === state.playerId
-        ? `Матч окончен — вы победили!`
+        ? msg.fromQueue
+          ? `Матч окончен — вы победили! +${pool} монет`
+          : `Матч окончен — вы победили!`
         : `Матч окончен — победитель: ${w.name}`
       : t.lastLog || "Матч окончен";
+    if (typeof msg.coins === "number") {
+      state.coins = msg.coins;
+      updateChip();
+    }
   } else {
     banner.classList.add("hidden");
   }
@@ -439,9 +521,10 @@ async function boot() {
   if (savedNick) $("name").value = savedNick;
   const params = new URLSearchParams(location.search);
   const roomFromUrl = (params.get("room") || "").toUpperCase();
+  state.autoQueue = params.get("queue") === "1";
   if (roomFromUrl) $("roomCode").value = roomFromUrl;
 
-  setView(roomFromUrl ? "home" : "home");
+  setView("home");
 
   try {
     await connect();
@@ -464,9 +547,16 @@ async function boot() {
   };
 
   $("btnGoOnline").onclick = () => {
+    state.autoQueue = true;
+    startQueueSearch();
+  };
+
+  $("btnPrivateRooms").onclick = () => {
     $("lobbyErr").textContent = "";
     setView("onlineHub");
   };
+
+  $("btnCancelQueue").onclick = () => cancelQueueSearch();
 
   $("btnBackHome").onclick = () => setView("home");
   $("btnBackHub").onclick = () => setView("onlineHub");

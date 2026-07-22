@@ -273,12 +273,16 @@ namespace Poker.Presentation
                 float cardYaw = 0f;
                 Vector3 o0 = new Vector3(-0.58f, 0.04f, 0f);
                 Vector3 o1 = new Vector3(0.58f, 0.05f, 0f);
+                Vector3? reveal0 = null;
+                Vector3? reveal1 = null;
                 if (side)
                 {
-                    // Справа (cos>0) и слева (cos<0) — перпендикулярно к нижним/верхним.
+                    // Справа/слева — вдоль стола; при вскрытии — в ряд лицом к герою.
                     cardYaw = Mathf.Cos(rad) > 0f ? 90f : -90f;
                     o0 = new Vector3(0f, 0.04f, -0.58f);
                     o1 = new Vector3(0f, 0.05f, 0.58f);
+                    reveal0 = new Vector3(-0.58f, 0.04f, 0f);
+                    reveal1 = new Vector3(0.58f, 0.05f, 0f);
                 }
                 else if (Mathf.Sin(rad) > 0.5f)
                 {
@@ -288,8 +292,8 @@ namespace Poker.Presentation
 
                 var holes = new List<CardView>();
                 int baseOrder = 40 + i * 5;
-                holes.Add(CardView.Create(seat.CardAnchor, o0, cardYaw, 1.0f, baseOrder));
-                holes.Add(CardView.Create(seat.CardAnchor, o1, cardYaw, 1.0f, baseOrder + 1));
+                holes.Add(CardView.Create(seat.CardAnchor, o0, cardYaw, 1.0f, baseOrder, reveal0));
+                holes.Add(CardView.Create(seat.CardAnchor, o1, cardYaw, 1.0f, baseOrder + 1, reveal1));
                 _holeCards[i] = holes;
             }
         }
