@@ -17,6 +17,7 @@ namespace Poker.Network
         CancellationTokenSource _cts;
         readonly ConcurrentQueue<Action> _main = new ConcurrentQueue<Action>();
         bool _wantQueueAfterAuth;
+        bool _queueFillBots;
 
         public bool Connected { get; private set; }
         public bool Authed { get; private set; }
@@ -38,9 +39,10 @@ namespace Poker.Network
             StartCoroutine(ConnectRoutine(hostOrUrl));
         }
 
-        public void AuthAndQueue(string playerId, string nickname)
+        public void AuthAndQueue(string playerId, string nickname, bool fillBots = false)
         {
             _wantQueueAfterAuth = true;
+            _queueFillBots = fillBots;
             int localCoins = PlayerWalletService.GetCoins();
             SendObj($"{{\"type\":\"auth\",\"playerId\":{JsonStr(playerId)},\"nickname\":{JsonStr(nickname)},\"localCoins\":{localCoins}}}");
         }
@@ -162,7 +164,8 @@ namespace Poker.Network
                         if (_wantQueueAfterAuth)
                         {
                             _wantQueueAfterAuth = false;
-                            SendObj($"{{\"type\":\"queue\",\"nickname\":{JsonStr(profile.Nickname)}}}");
+                            string fill = _queueFillBots ? "true" : "false";
+                            SendObj($"{{\"type\":\"queue\",\"nickname\":{JsonStr(profile.Nickname)},\"fillBots\":{fill}}}");
                         }
                         return;
                     }

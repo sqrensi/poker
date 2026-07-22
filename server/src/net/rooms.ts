@@ -18,6 +18,7 @@ export interface ClientMsg {
   amount?: number;
   publicBase?: string;
   count?: number;
+  fillBots?: boolean;
 }
 
 function roomCode() {
@@ -411,6 +412,14 @@ export class RoomManager {
         this.wsPlayer.set(e.ws, e.playerId);
       }
 
+      const fillBots = batch.players.some((p) => p.fillBots);
+      if (fillBots) {
+        while (room.seats.length < QUEUE_MAX) {
+          const added = room.addBot();
+          if (!added.ok) break;
+        }
+      }
+
       const err = room.start();
       if (err) {
         for (const e of batch.players) {
@@ -430,7 +439,8 @@ export class RoomManager {
             type: "matched",
             code: room.code,
             players: batch.players.length,
-            maxPlayers: batch.players.length,
+            bots: room.seats.filter((s) => s.isBot).length,
+            maxPlayers: room.seats.length,
           })
         );
       }
@@ -491,6 +501,7 @@ export class RoomManager {
       const charge = profiles.chargeBuyIn(profile.playerId, ONLINE_BUY_IN);
       if (!charge.ok) return { error: charge.error };
       const ticketId = randomUUID();
+      const fillBots = !!msg.fillBots;
       const enq = this.queue.enqueue({
         ticketId,
         playerId: profile.playerId,
@@ -498,6 +509,7 @@ export class RoomManager {
         rating: profile.rating,
         ws,
         buyInPaid: true,
+        fillBots,
       });
       if (!enq.ok) {
         profiles.refundBuyIn(profile.playerId, ONLINE_BUY_IN);

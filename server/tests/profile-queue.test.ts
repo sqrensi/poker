@@ -9,13 +9,14 @@ import {
   ONLINE_BUY_IN,
 } from "../src/profile/store.js";
 import { MatchQueue, QUEUE_MAX, QUEUE_MIN, QUEUE_FILL_MS } from "../src/net/queue.js";
+import { Room } from "../src/net/rooms.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataPath = path.join(__dirname, "..", "data", "profiles.json");
 
 const fakeWs = { readyState: 1 } as any;
 
-function enqueuePlayer(q: MatchQueue, i: number, at: number) {
+function enqueuePlayer(q: MatchQueue, i: number, at: number, fillBots = false) {
   q.enqueue({
     ticketId: `t${i}`,
     playerId: `p${i}`,
@@ -23,6 +24,7 @@ function enqueuePlayer(q: MatchQueue, i: number, at: number) {
     rating: 1000,
     ws: fakeWs,
     buyInPaid: true,
+    fillBots,
   });
   const entry = q.getTicket(`p${i}`);
   if (entry) entry.enqueuedAt = at;
@@ -143,5 +145,28 @@ describe("MatchQueue", () => {
     const st = q.statusFor("p0");
     expect(st?.minPlayers).toBe(QUEUE_MIN);
     expect(st?.maxPlayers).toBe(QUEUE_MAX);
+  });
+
+  it("stores fillBots on queue entry", () => {
+    const q = new MatchQueue();
+    enqueuePlayer(q, 0, Date.now(), true);
+    expect(q.getTicket("p0")?.fillBots).toBe(true);
+  });
+});
+
+describe("queue bot fill", () => {
+  it("fills empty seats with bots up to 4", () => {
+    const room = new Room("BOT01", "p0", { fromQueue: true, chips: ONLINE_BUY_IN });
+    const fakeWs = { readyState: 1, send() {} } as any;
+    expect(room.add(fakeWs, "p0", "Human0").ok).toBe(true);
+    expect(room.add({ readyState: 1, send() {} } as any, "p1", "Human1").ok).toBe(true);
+    while (room.seats.length < QUEUE_MAX) {
+      const r = room.addBot();
+      expect(r.ok).toBe(true);
+    }
+    expect(room.seats.length).toBe(QUEUE_MAX);
+    expect(room.seats.filter((s) => s.isBot).length).toBe(2);
+    expect(room.start()).toBeNull();
+    expect(room.table?.players.length).toBe(QUEUE_MAX);
   });
 });

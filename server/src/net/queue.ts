@@ -13,6 +13,8 @@ export interface QueueEntry {
   ws: WebSocket;
   enqueuedAt: number;
   buyInPaid: boolean;
+  /** Добрать ботов до QUEUE_MAX при старте матча. */
+  fillBots: boolean;
 }
 
 export interface MatchedTable {
@@ -42,7 +44,7 @@ export class MatchQueue {
 
   enqueue(entry: Omit<QueueEntry, "enqueuedAt">): { ok: true } | { ok: false; error: string } {
     if (this.has(entry.playerId)) return { ok: false, error: "Уже в очереди" };
-    this.queue.push({ ...entry, enqueuedAt: Date.now() });
+    this.queue.push({ ...entry, fillBots: !!entry.fillBots, enqueuedAt: Date.now() });
     return { ok: true };
   }
 

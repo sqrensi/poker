@@ -70,7 +70,7 @@ namespace Poker.Network
             string id = PlayerIdentityService.GetOrCreatePlayerId();
             string nick = PlayerIdentityService.GetNickname();
             _status.text = "Вход…";
-            _client.AuthAndQueue(id, nick);
+            _client.AuthAndQueue(id, nick, OnlineMatchPreferences.FillWithBots);
         }
 
         void OnQueueStatus(OnlineQueueStatus qs)
@@ -78,6 +78,8 @@ namespace Poker.Network
             _error.text = "";
             int max = qs.MaxPlayers > 0 ? qs.MaxPlayers : 4;
             _status.text = $"В очереди: {qs.QueueSize} / {max}\nОжидание: {qs.WaitedSec} сек";
+            if (OnlineMatchPreferences.FillWithBots)
+                _status.text += "\nБоты доберут стол до 4";
             if (qs.QueueSize >= qs.MinPlayers && qs.QueueSize < max)
                 _status.text += $"\nСтарт через {qs.FillTimeoutSec} сек без новых игроков";
         }

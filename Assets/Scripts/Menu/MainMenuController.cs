@@ -10,7 +10,9 @@ namespace Poker.Menu
     public sealed class MainMenuController : MonoBehaviour
     {
         Text _nicknameText;
-        Text _coinsText;
+        Text _coinsAmountText;
+        Text _coinsBuyInText;
+        GameObject _coinsBadge;
         GameObject _canvasGo;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -84,7 +86,8 @@ namespace Poker.Menu
             bool phone = MobileLayout.IsPhoneLike();
             float btnW = phone ? 460f : 440f;
             float btnH = phone ? 68f : 64f;
-            float y0 = phone ? 36f : 24f;
+            // На телефоне кнопки ниже — иначе «Онлайн матч» перекрывает строку монет.
+            float y0 = phone ? 4f : 24f;
             float gap = phone ? 82f : 86f;
 
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
@@ -145,20 +148,19 @@ namespace Poker.Menu
             sub.GetComponent<Outline>().effectDistance = new Vector2(0.4f, -0.4f);
 
             _nicknameText = MakeText(canvasGo.transform, PlayerIdentityService.GetNickname(),
-                new Vector2(0f, phone ? 98f : 108f), new Vector2(400f, 32f),
+                new Vector2(0f, phone ? 118f : 108f), new Vector2(phone ? 480f : 400f, 32f),
                 20, FontStyle.Normal, UiTheme.Cyan);
             _nicknameText.alignment = TextAnchor.MiddleCenter;
 
-            _coinsText = MakeText(canvasGo.transform, FormatCoinsLine(),
-                new Vector2(0f, phone ? 62f : 72f), new Vector2(400f, 28f),
-                18, FontStyle.Bold, UiTheme.TextMain);
-            _coinsText.alignment = TextAnchor.MiddleCenter;
+            CreateCoinsBadge(canvasGo.transform, phone);
 
             MainMenuNicknameEditor.Create(canvasGo.transform, RefreshHeader);
 
             // CTA: coral pill
             CreatePillButton(canvasGo.transform, "Онлайн матч", new Vector2(0f, y0),
                 btnW, btnH, UiTheme.Coral, Color.white, StartOnline);
+
+            CreateFillBotsToggle(canvasGo.transform, new Vector2(0f, y0 - gap * 0.42f), btnW);
 
             // Secondary glass pill + cyan rim
             var bots = CreatePillButton(canvasGo.transform, "Играть с ботами", new Vector2(0f, y0 - gap),
@@ -167,7 +169,7 @@ namespace Poker.Menu
             botsOutline.effectColor = new Color(UiTheme.Cyan.r, UiTheme.Cyan.g, UiTheme.Cyan.b, 0.45f);
             botsOutline.effectDistance = new Vector2(1.5f, -1.5f);
 
-            CreatePillButton(canvasGo.transform, "Выход", new Vector2(0f, y0 - gap * 2f),
+            CreatePillButton(canvasGo.transform, "Выход", new Vector2(0f, y0 - gap * 1.42f),
                 btnW * 0.72f, btnH * 0.78f, new Color(1f, 1f, 1f, 0.05f), UiTheme.TextDim, () =>
                 {
 #if UNITY_EDITOR
@@ -176,20 +178,109 @@ namespace Poker.Menu
                     Application.Quit();
 #endif
                 });
+
+            // Профиль поверх кнопок (на случай наложения по Y).
+            if (_nicknameText != null) _nicknameText.transform.SetAsLastSibling();
+            if (_coinsBadge != null) _coinsBadge.transform.SetAsLastSibling();
+        }
+
+        static readonly Color CoinGold = UiTheme.Hex(0xFFD166);
+        static readonly Color CoinGoldSoft = UiTheme.Hex(0xFFE9A3);
+
+        void CreateCoinsBadge(Transform parent, bool phone)
+        {
+            float pad = phone ? 12f : 18f;
+            _coinsBadge = new GameObject("CoinsBadge");
+            _coinsBadge.transform.SetParent(parent, false);
+            var rt = _coinsBadge.AddComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(pad, -pad);
+            rt.sizeDelta = new Vector2(phone ? 210f : 230f, phone ? 74f : 78f);
+
+            var bg = _coinsBadge.AddComponent<Image>();
+            bg.color = UiTheme.GlassStrong;
+            bg.raycastTarget = false;
+            UiTheme.ApplyPill(bg);
+            var edge = _coinsBadge.AddComponent<Outline>();
+            edge.effectColor = new Color(CoinGold.r, CoinGold.g, CoinGold.b, 0.45f);
+            edge.effectDistance = new Vector2(1.2f, -1.2f);
+
+            var iconGo = new GameObject("CoinIcon");
+            iconGo.transform.SetParent(_coinsBadge.transform, false);
+            var iconRt = iconGo.AddComponent<RectTransform>();
+            iconRt.anchorMin = iconRt.anchorMax = new Vector2(0f, 0.5f);
+            iconRt.pivot = new Vector2(0f, 0.5f);
+            iconRt.anchoredPosition = new Vector2(12f, 0f);
+            iconRt.sizeDelta = new Vector2(phone ? 40f : 44f, phone ? 40f : 44f);
+            var iconBg = iconGo.AddComponent<Image>();
+            iconBg.color = new Color(CoinGold.r, CoinGold.g, CoinGold.b, 0.22f);
+            iconBg.raycastTarget = false;
+            UiTheme.ApplyCircle(iconBg);
+            var iconLabel = MakeText(iconGo.transform, "◆", Vector2.zero, iconRt.sizeDelta,
+                phone ? 22 : 24, FontStyle.Bold, CoinGold);
+            iconLabel.alignment = TextAnchor.MiddleCenter;
+            var iconLabelRt = iconLabel.rectTransform;
+            iconLabelRt.anchorMin = Vector2.zero;
+            iconLabelRt.anchorMax = Vector2.one;
+            iconLabelRt.offsetMin = iconLabelRt.offsetMax = Vector2.zero;
+            UiTheme.StyleLabel(iconLabel, false);
+
+            var textCol = new GameObject("Texts");
+            textCol.transform.SetParent(_coinsBadge.transform, false);
+            var colRt = textCol.AddComponent<RectTransform>();
+            colRt.anchorMin = Vector2.zero;
+            colRt.anchorMax = Vector2.one;
+            colRt.offsetMin = new Vector2(phone ? 58f : 62f, 8f);
+            colRt.offsetMax = new Vector2(-10f, -8f);
+
+            var title = MakeText(textCol.transform, "МОНЕТЫ", Vector2.zero, new Vector2(160f, 18f),
+                phone ? 11 : 12, FontStyle.Bold, UiTheme.TextDim);
+            title.alignment = TextAnchor.MiddleLeft;
+            var titleRt = title.rectTransform;
+            titleRt.anchorMin = new Vector2(0f, 1f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.pivot = new Vector2(0f, 1f);
+            titleRt.anchoredPosition = Vector2.zero;
+            titleRt.sizeDelta = new Vector2(0f, 18f);
+
+            _coinsAmountText = MakeText(textCol.transform, FormatCoinsAmount(), Vector2.zero,
+                new Vector2(160f, 34f), phone ? 26 : 28, FontStyle.Bold, CoinGoldSoft);
+            _coinsAmountText.alignment = TextAnchor.MiddleLeft;
+            UiTheme.StyleLabel(_coinsAmountText);
+            var amountOutline = _coinsAmountText.GetComponent<Outline>();
+            if (amountOutline != null)
+                amountOutline.effectColor = new Color(CoinGold.r * 0.35f, CoinGold.g * 0.2f, 0f, 0.55f);
+            var amountRt = _coinsAmountText.rectTransform;
+            amountRt.anchorMin = new Vector2(0f, 0.5f);
+            amountRt.anchorMax = new Vector2(1f, 0.5f);
+            amountRt.pivot = new Vector2(0f, 0.5f);
+            amountRt.anchoredPosition = new Vector2(0f, 2f);
+            amountRt.sizeDelta = new Vector2(0f, 34f);
+
+            _coinsBuyInText = MakeText(textCol.transform,
+                $"взнос {PlayerWalletService.FormatCoins(PlayerWalletService.GameBuyIn)}",
+                Vector2.zero, new Vector2(160f, 16f), phone ? 11 : 12, FontStyle.Normal, UiTheme.Cyan);
+            _coinsBuyInText.alignment = TextAnchor.MiddleLeft;
+            UiTheme.StyleLabel(_coinsBuyInText, false);
+            var buyInRt = _coinsBuyInText.rectTransform;
+            buyInRt.anchorMin = new Vector2(0f, 0f);
+            buyInRt.anchorMax = new Vector2(1f, 0f);
+            buyInRt.pivot = new Vector2(0f, 0f);
+            buyInRt.anchoredPosition = Vector2.zero;
+            buyInRt.sizeDelta = new Vector2(0f, 16f);
         }
 
         void RefreshHeader()
         {
             if (_nicknameText != null)
                 _nicknameText.text = PlayerIdentityService.GetNickname();
-            if (_coinsText != null)
-                _coinsText.text = FormatCoinsLine();
+            if (_coinsAmountText != null)
+                _coinsAmountText.text = FormatCoinsAmount();
         }
 
-        static string FormatCoinsLine()
-        {
-            return $"Монеты: {PlayerWalletService.FormatCoins(PlayerWalletService.GetCoins())}  ·  взнос {PlayerWalletService.FormatCoins(PlayerWalletService.GameBuyIn)}";
-        }
+        static string FormatCoinsAmount()
+            => PlayerWalletService.FormatCoins(PlayerWalletService.GetCoins());
 
         void StartBots()
         {
@@ -230,6 +321,55 @@ namespace Poker.Menu
         internal void OnMatchmakingCancelled()
         {
             ShowMenu();
+        }
+
+        static void CreateFillBotsToggle(Transform parent, Vector2 pos, float width)
+        {
+            var row = new GameObject("FillBotsToggle");
+            row.transform.SetParent(parent, false);
+            var rt = row.AddComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = new Vector2(width, 44f);
+
+            var toggleGo = new GameObject("Toggle");
+            toggleGo.transform.SetParent(row.transform, false);
+            var toggleRt = toggleGo.AddComponent<RectTransform>();
+            toggleRt.anchorMin = new Vector2(0f, 0.5f);
+            toggleRt.anchorMax = new Vector2(0f, 0.5f);
+            toggleRt.pivot = new Vector2(0f, 0.5f);
+            toggleRt.anchoredPosition = new Vector2(8f, 0f);
+            toggleRt.sizeDelta = new Vector2(36f, 36f);
+
+            var bg = toggleGo.AddComponent<Image>();
+            bg.color = UiTheme.GlassStrong;
+            UiTheme.ApplyRounded(bg);
+
+            var checkGo = new GameObject("Check");
+            checkGo.transform.SetParent(toggleGo.transform, false);
+            var checkRt = checkGo.AddComponent<RectTransform>();
+            checkRt.anchorMin = Vector2.zero;
+            checkRt.anchorMax = Vector2.one;
+            checkRt.offsetMin = checkRt.offsetMax = new Vector2(6f, 6f);
+            var checkImg = checkGo.AddComponent<Image>();
+            checkImg.color = UiTheme.Cyan;
+            UiTheme.ApplyRounded(checkImg);
+
+            var toggle = toggleGo.AddComponent<Toggle>();
+            toggle.targetGraphic = bg;
+            toggle.graphic = checkImg;
+            toggle.isOn = OnlineMatchPreferences.FillWithBots;
+            toggle.onValueChanged.AddListener(v => OnlineMatchPreferences.FillWithBots = v);
+
+            var label = MakeText(row.transform, "Добирать ботов до 4 игроков",
+                new Vector2(52f, 0f), new Vector2(width - 60f, 44f),
+                18, FontStyle.Normal, UiTheme.TextMain);
+            label.alignment = TextAnchor.MiddleLeft;
+            var labelRt = label.rectTransform;
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(1f, 1f);
+            labelRt.offsetMin = new Vector2(52f, 0f);
+            labelRt.offsetMax = new Vector2(-8f, 0f);
         }
 
         static Button CreatePillButton(Transform parent, string label, Vector2 pos,

@@ -70,7 +70,8 @@ namespace Poker.Presentation
             var ctrl = go.AddComponent<PokerGameController>();
             ctrl._onlineMode = true;
             ctrl._onlineClient = client;
-            ctrl.playerCount = 4;
+            int seats = initialState?.Players?.Count ?? 2;
+            ctrl.playerCount = Mathf.Clamp(seats, 2, 4);
             ctrl._onlineState = initialState;
             if (client != null)
                 client.StateEvent += ctrl.OnOnlineState;
@@ -113,6 +114,9 @@ namespace Poker.Presentation
 
             yield return null;
 
+            if (_onlineMode && _onlineState != null)
+                playerCount = Mathf.Clamp(_onlineState.Players.Count, 2, 4);
+
             try
             {
                 CardSpriteCatalog.EnsureLoaded();
@@ -129,6 +133,8 @@ namespace Poker.Presentation
             yield return null;
             if (_onlineMode)
             {
+                if (_onlineState != null)
+                    ApplySeatLayout(_onlineState.Players.Count);
                 ResolveMyServerSeat();
                 RefreshAll();
                 yield break;
@@ -257,6 +263,26 @@ namespace Poker.Presentation
         {
             if (_myServerSeat < 0) return serverSeat;
             return (serverSeat - _myServerSeat + playerCount) % playerCount;
+        }
+
+        void ApplySeatLayout(int count)
+        {
+            playerCount = Mathf.Clamp(count, 2, 4);
+            for (int i = 0; i < _seats.Count; i++)
+                SetVisualSeatActive(i, i < playerCount);
+        }
+
+        void SetVisualSeatActive(int vi, bool active)
+        {
+            if (vi >= 0 && vi < _seats.Count && _seats[vi] != null)
+                _seats[vi].gameObject.SetActive(active);
+            if (vi >= 0 && vi < _seatLabelRts.Count && _seatLabelRts[vi] != null)
+                _seatLabelRts[vi].gameObject.SetActive(active);
+            if (!active && _holeCards.TryGetValue(vi, out var holes) && holes != null)
+            {
+                foreach (var h in holes)
+                    if (h != null) h.gameObject.SetActive(false);
+            }
         }
 
         void StartMatch()
@@ -910,6 +936,12 @@ namespace Poker.Presentation
 
             for (int i = 0; i < _seats.Count && i < _seatLabelRts.Count; i++)
             {
+                if (i >= playerCount || !_seats[i].gameObject.activeInHierarchy)
+                {
+                    _seatLabelRts[i].gameObject.SetActive(false);
+                    continue;
+                }
+
                 float angle = _seats[i].SeatAngle;
                 float rad = angle * Mathf.Deg2Rad;
                 // Наружу от центра стола — вне сукна
@@ -1410,6 +1442,7 @@ namespace Poker.Presentation
         {
             if (_onlineState == null) return;
             ResolveMyServerSeat();
+            ApplySeatLayout(_onlineState.Players.Count);
 
             _hudTitle.text = $"Раздача №{_onlineState.HandNumber}  ·  {PokerRu.StreetNameFromServer(_onlineState.Street)}";
             _potText.text = $"БАНК  {_onlineState.Pot}";
@@ -1441,7 +1474,7 @@ namespace Poker.Presentation
                     _boardCards[i].gameObject.SetActive(false);
             }
 
-            for (int vi = 0; vi < _seats.Count; vi++)
+            for (int vi = 0; vi < playerCount && vi < _seats.Count; vi++)
             {
                 OnlineSeatPlayer op = null;
                 foreach (var p in _onlineState.Players)
@@ -1449,11 +1482,7 @@ namespace Poker.Presentation
                     if (VisualSeat(p.Seat) == vi) { op = p; break; }
                 }
 
-                if (op == null)
-                {
-                    if (vi < _seatNameLabels.Count) _seatNameLabels[vi].text = "—";
-                    continue;
-                }
+                if (op == null) continue;
 
                 bool acting = _onlineState.Acting == op.Seat;
                 bool dealer = _onlineState.Dealer == op.Seat;
@@ -1485,25 +1514,35 @@ namespace Poker.Presentation
                               _onlineState.Street == "showdown" ||
                               _onlineState.Street == "handComplete" ||
                               _onlineState.Street == "matchComplete";
-                if (op.Folded || op.Eliminated) reveal = isMe && op.Hole.Count > 0;
 
                 bool faceTowardMe = reveal && !isMe;
                 var holes = _holeCards[vi];
                 for (int c = 0; c < 2; c++)
                 {
-                    if (op.Eliminated || (op.HoleHidden && !isMe) || (op.Hole.Count == 0 && !isMe))
+                    if (op.Eliminated)
                     {
                         holes[c].gameObject.SetActive(false);
                         continue;
                     }
-                    if (c < op.Hole.Count)
+
+                    // Соперник: сервер шлёт «??» — показываем рубашки, не прячем карты.
+                    if (!isMe && op.HoleHidden && c >= op.Hole.Count)
                     {
                         holes[c].gameObject.SetActive(true);
-                        holes[c].SetFacingViewer(faceTowardMe);
-                        holes[c].SetCard(op.Hole[c], reveal || isMe);
+                        holes[c].SetFacingViewer(false);
+                        holes[c].ShowBack();
+                        continue;
                     }
-                    else
+
+                    if (c >= op.Hole.Count)
+                    {
                         holes[c].gameObject.SetActive(false);
+                        continue;
+                    }
+
+                    holes[c].gameObject.SetActive(true);
+                    holes[c].SetFacingViewer(faceTowardMe);
+                    holes[c].SetCard(op.Hole[c], reveal || isMe);
                 }
             }
 
