@@ -19,6 +19,13 @@ namespace Poker.Network
         public bool HasAny => CanFold || CanCheck || CanCall || CanBet || CanRaise;
     }
 
+    public sealed class OnlinePotResult
+    {
+        public int Amount;
+        public readonly List<int> WinnerSeats = new List<int>(2);
+        public string Description = "";
+    }
+
     public sealed class OnlineSeatPlayer
     {
         public int Seat;
@@ -54,6 +61,7 @@ namespace Poker.Network
         public int BigBlind = 10;
         public readonly List<Card> Board = new List<Card>(5);
         public readonly List<OnlineSeatPlayer> Players = new List<OnlineSeatPlayer>(4);
+        public readonly List<OnlinePotResult> Pots = new List<OnlinePotResult>(2);
         public OnlineLegalActions Legal;
 
         public bool IsMyTurn(OnlineLegalActions legal) => legal != null && legal.HasAny;
@@ -128,6 +136,28 @@ namespace Poker.Network
                                 }
                             }
                             s.Players.Add(op);
+                        }
+                    }
+
+                    if (table.TryGetProperty("pots", out var pots) && pots.ValueKind == JsonLite.Kind.Array)
+                    {
+                        foreach (var pot in pots.EnumerateArray())
+                        {
+                            var pr = new OnlinePotResult
+                            {
+                                Amount = GetInt(pot, "amount"),
+                                Description = GetStr(pot, "description"),
+                            };
+                            if (pot.TryGetProperty("winners", out var winners) &&
+                                winners.ValueKind == JsonLite.Kind.Array)
+                            {
+                                foreach (var w in winners.EnumerateArray())
+                                {
+                                    if (w.TryGetInt32(out int seat))
+                                        pr.WinnerSeats.Add(seat);
+                                }
+                            }
+                            s.Pots.Add(pr);
                         }
                     }
 

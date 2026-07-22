@@ -55,6 +55,7 @@ namespace Poker.Presentation
         float _aiTimer;
         bool _aiPending;
         bool _handEndBusy;
+        int _onlineHandBannerShown = -1;
         Camera _cam;
         TurnArrow _turnArrow;
         Transform _tableRoot;
@@ -84,6 +85,57 @@ namespace Poker.Presentation
         void OnOnlineState(OnlineGameState state)
         {
             _onlineState = state;
+
+            if (state.Street == "handComplete" &&
+                state.HandNumber != _onlineHandBannerShown &&
+                !_handEndBusy)
+            {
+                ShowOnlineHandBanner(state);
+                return;
+            }
+
+            if (state.Street == "matchComplete" && !_handEndBusy)
+            {
+                RefreshAll();
+                if (_winnerOverlay != null)
+                    _winnerOverlay.ShowMatchEndOnline(state);
+                return;
+            }
+
+            if (!_handEndBusy)
+                RefreshAll();
+        }
+
+        void ShowOnlineHandBanner(OnlineGameState state)
+        {
+            _handEndBusy = true;
+            ExitRaiseMode();
+            SetActionButtons(false);
+            RefreshAll();
+
+            if (_winnerOverlay == null)
+            {
+                _handEndBusy = false;
+                return;
+            }
+
+            _winnerOverlay.Finished -= OnOnlineHandBannerFinished;
+            _winnerOverlay.Finished += OnOnlineHandBannerFinished;
+
+            if (_winnerOverlay.ShowOnline(state))
+                _onlineHandBannerShown = state.HandNumber;
+            else
+            {
+                _winnerOverlay.Finished -= OnOnlineHandBannerFinished;
+                _handEndBusy = false;
+            }
+        }
+
+        void OnOnlineHandBannerFinished()
+        {
+            if (_winnerOverlay != null)
+                _winnerOverlay.Finished -= OnOnlineHandBannerFinished;
+            _handEndBusy = false;
             RefreshAll();
         }
 
@@ -223,6 +275,8 @@ namespace Poker.Presentation
         void UpdateOnline()
         {
             if (_onlineState == null) return;
+            if (_handEndBusy) return;
+
             bool matchOver = _onlineState.Street == "matchComplete";
             if (matchOver)
             {
@@ -699,9 +753,11 @@ namespace Poker.Presentation
             if (_winnerOverlay != null)
             {
                 _winnerOverlay.Finished -= OnHandBannerFinished;
+                _winnerOverlay.Finished -= OnOnlineHandBannerFinished;
                 _winnerOverlay.Hide();
             }
             _handEndBusy = false;
+            _onlineHandBannerShown = -1;
             if (_onlineMode && _onlineClient != null)
             {
                 _onlineClient.StateEvent -= OnOnlineState;
@@ -1742,9 +1798,9 @@ namespace Poker.Presentation
 
             PositionSeatLabels();
 
-            if (_onlineState.IsMyTurn(_onlineState.Legal))
+            if (_onlineState.IsMyTurn(_onlineState.Legal) && !_handEndBusy)
                 RefreshOnlineActionButtons();
-            else if (_onlineState.Street != "handComplete")
+            else
                 SetActionButtons(false);
         }
 

@@ -115,8 +115,11 @@ namespace Poker.Menu
             var card = MakeImage(uiRoot, "GlassCard", UiTheme.Glass, stretch: false);
             UiTheme.ApplyRounded(card);
             var cardRt = card.rectTransform;
-            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
-            cardRt.anchoredPosition = new Vector2(0f, phone ? 20f : 12f);
+            float nickPanelH = phone ? 110f : 108f;
+            float nickBottom = phone ? 22f : 28f;
+            float panelGap = phone ? 44f : 32f;
+            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0f);
+            cardRt.anchoredPosition = new Vector2(0f, nickBottom + nickPanelH + panelGap);
             Transform cardRoot = card.transform;
 
             CreateCoinsBadge(uiRoot, phone);
@@ -179,7 +182,7 @@ namespace Poker.Menu
             cardEdge.effectColor = UiTheme.GlassBorder;
             cardEdge.effectDistance = new Vector2(1.2f, -1.2f);
 
-            MainMenuNicknameEditor.Create(uiRoot, RefreshHeader);
+            MainMenuNicknameEditor.Create(uiRoot, RefreshHeader, nickBottom);
 
             if (_coinsBadge != null) _coinsBadge.transform.SetAsLastSibling();
         }

@@ -5,6 +5,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 using Poker.Game;
+using Poker.Network;
 
 namespace Poker.Presentation
 {
@@ -122,6 +123,24 @@ namespace Poker.Presentation
             return text;
         }
 
+        public bool ShowOnline(OnlineGameState state)
+        {
+            if (state == null || state.Street != "handComplete") return false;
+            if (state.HandNumber == _shownHand) return false;
+            _shownHand = state.HandNumber;
+
+            FormatOnlineResult(state, out string title, out string subtitle);
+            _title.text = title;
+            _subtitle.text = subtitle;
+
+            if (_anim != null)
+                StopCoroutine(_anim);
+            gameObject.SetActive(true);
+            transform.SetAsLastSibling();
+            _anim = StartCoroutine(Animate(autoHide: true));
+            return true;
+        }
+
         public bool Show(PokerTable table)
         {
             if (table == null || table.LastResult == null) return false;
@@ -136,8 +155,48 @@ namespace Poker.Presentation
             if (_anim != null)
                 StopCoroutine(_anim);
             gameObject.SetActive(true);
+            transform.SetAsLastSibling();
             _anim = StartCoroutine(Animate(autoHide: true));
             return true;
+        }
+
+        public void ShowMatchEndOnline(OnlineGameState state)
+        {
+            if (state == null || state.Street != "matchComplete") return;
+            _shownHand = -1;
+
+            if (state.MatchWinner >= 0)
+            {
+                OnlineSeatPlayer winner = null;
+                foreach (var p in state.Players)
+                {
+                    if (p.Seat == state.MatchWinner) { winner = p; break; }
+                }
+                if (winner != null)
+                {
+                    bool iWon = winner.Id == state.YouId;
+                    _title.text = iWon ? "Вы выиграли матч!" : $"Победитель: {winner.Name}";
+                    _subtitle.text = iWon
+                        ? $"Стек: {winner.Chips}"
+                        : $"Вы проиграли матч  ·  стек {winner.Name}: {winner.Chips}";
+                }
+                else
+                {
+                    _title.text = "Матч окончен";
+                    _subtitle.text = state.LastLog ?? "";
+                }
+            }
+            else
+            {
+                _title.text = "Матч окончен";
+                _subtitle.text = state.LastLog ?? "";
+            }
+
+            if (_anim != null)
+                StopCoroutine(_anim);
+            gameObject.SetActive(true);
+            transform.SetAsLastSibling();
+            _anim = StartCoroutine(Animate(autoHide: false));
         }
 
         public void ShowMatchEnd(PokerTable table)
@@ -247,6 +306,77 @@ namespace Poker.Presentation
             var names = new List<string>();
             foreach (var kv in wonChips)
                 names.Add($"{table.Players[kv.Key].Name} (+{kv.Value})");
+            title = "Ничья — банк разделён";
+            subtitle = string.Join(", ", names);
+            if (!string.IsNullOrEmpty(handDesc))
+                subtitle += "  ·  " + handDesc;
+        }
+
+        static void FormatOnlineResult(OnlineGameState state, out string title, out string subtitle)
+        {
+            title = "Раздача окончена";
+            subtitle = state.LastLog ?? "";
+
+            if (state.Pots.Count == 0)
+                return;
+
+            var wonChips = new Dictionary<int, int>();
+            string handDesc = null;
+            foreach (var pot in state.Pots)
+            {
+                if (pot.WinnerSeats.Count == 0) continue;
+                int share = pot.Amount / pot.WinnerSeats.Count;
+                int rem = pot.Amount % pot.WinnerSeats.Count;
+                for (int i = 0; i < pot.WinnerSeats.Count; i++)
+                {
+                    int seat = pot.WinnerSeats[i];
+                    int gain = share + (i < rem ? 1 : 0);
+                    wonChips.TryGetValue(seat, out int prev);
+                    wonChips[seat] = prev + gain;
+                }
+                if (handDesc == null && !string.IsNullOrEmpty(pot.Description))
+                    handDesc = pot.Description;
+            }
+
+            if (wonChips.Count == 0)
+                return;
+
+            OnlineSeatPlayer FindSeat(int seat)
+            {
+                foreach (var p in state.Players)
+                    if (p.Seat == seat) return p;
+                return null;
+            }
+
+            if (wonChips.Count == 1)
+            {
+                foreach (var kv in wonChips)
+                {
+                    var p = FindSeat(kv.Key);
+                    string name = p?.Name ?? $"Игрок {kv.Key}";
+                    bool iWon = p != null && p.Id == state.YouId;
+
+                    title = iWon ? "Вы выиграли!" : $"Победитель: {name}";
+
+                    var sb = new StringBuilder();
+                    if (!iWon)
+                        sb.Append("Вы проиграли эту раздачу  ·  ");
+                    sb.Append($"+{kv.Value} фишек");
+                    if (!string.IsNullOrEmpty(handDesc) && handDesc != "Без вскрытия")
+                        sb.Append("  ·  ").Append(handDesc);
+                    else if (handDesc == "Без вскрытия")
+                        sb.Append("  ·  все соперники сбросили");
+                    subtitle = sb.ToString();
+                    return;
+                }
+            }
+
+            var names = new List<string>();
+            foreach (var kv in wonChips)
+            {
+                var p = FindSeat(kv.Key);
+                names.Add($"{p?.Name ?? kv.Key.ToString()} (+{kv.Value})");
+            }
             title = "Ничья — банк разделён";
             subtitle = string.Join(", ", names);
             if (!string.IsNullOrEmpty(handDesc))

@@ -16,15 +16,19 @@ namespace Poker.Menu
         bool _editing;
         System.Action _onChanged;
 
-        public static MainMenuNicknameEditor Create(Transform canvas, System.Action onChanged = null)
+        public static MainMenuNicknameEditor Create(Transform canvas, System.Action onChanged = null,
+            float bottomInset = -1f)
         {
             var go = new GameObject("NicknameEditor");
             go.transform.SetParent(canvas, false);
             var editor = go.AddComponent<MainMenuNicknameEditor>();
             editor._onChanged = onChanged;
+            editor._bottomInset = bottomInset;
             editor.Build();
             return editor;
         }
+
+        float _bottomInset = -1f;
 
         void Build()
         {
@@ -33,7 +37,7 @@ namespace Poker.Menu
             root.anchorMin = new Vector2(0.5f, 0f);
             root.anchorMax = new Vector2(0.5f, 0f);
             root.pivot = new Vector2(0.5f, 0f);
-            root.anchoredPosition = new Vector2(0f, phone ? 22f : 28f);
+            root.anchoredPosition = new Vector2(0f, _bottomInset >= 0f ? _bottomInset : (phone ? 22f : 28f));
             root.sizeDelta = new Vector2(phone ? 520f : 480f, phone ? 110f : 108f);
 
             var bg = gameObject.AddComponent<Image>();

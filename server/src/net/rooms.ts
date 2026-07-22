@@ -54,6 +54,10 @@ export class Room {
   private readonly sb: number;
   private readonly bb: number;
 
+  /** Задержка перед авто-раздачей (мс) — время на баннер победителя у клиента. */
+  private handCompleteAt = 0;
+  private static readonly HAND_BANNER_MS = 4200;
+
   constructor(
     code: string,
     hostId: string,
@@ -614,16 +618,21 @@ export class RoomManager {
     this.tickOnlineAutoHands();
   }
 
-  /** Онлайн-матчи из очереди: следующая раздача автоматически. */
+  /** Онлайн-матчи из очереди: следующая раздача после паузы на баннер. */
   tickOnlineAutoHands() {
     for (const room of this.rooms.values()) {
       if (!room.fromQueue || !room.started || !room.table) continue;
       if (room.table.street === "handComplete") {
+        if (!room.handCompleteAt) room.handCompleteAt = Date.now();
+        if (Date.now() - room.handCompleteAt < Room.HAND_BANNER_MS) continue;
+        room.handCompleteAt = 0;
         const err = room.nextHand();
         if (!err) {
           room.settleMatch();
           room.broadcast();
         }
+      } else {
+        room.handCompleteAt = 0;
       }
     }
   }
