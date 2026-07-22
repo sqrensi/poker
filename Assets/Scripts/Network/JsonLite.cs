@@ -201,14 +201,20 @@ namespace Poker.Network
             throw new FormatException("Unterminated string");
         }
 
+        static bool MatchAt(string json, int i, string token)
+        {
+            return i + token.Length <= json.Length &&
+                   string.Compare(json, i, token, 0, token.Length, StringComparison.Ordinal) == 0;
+        }
+
         static JsonLite ParseBool(string json, ref int i)
         {
-            if (json.StartsWith("true", i, StringComparison.Ordinal))
+            if (MatchAt(json, i, "true"))
             {
                 i += 4;
                 return new JsonLite { ValueKind = Kind.Bool, BoolValue = true };
             }
-            if (json.StartsWith("false", i, StringComparison.Ordinal))
+            if (MatchAt(json, i, "false"))
             {
                 i += 5;
                 return new JsonLite { ValueKind = Kind.Bool, BoolValue = false };
@@ -218,7 +224,7 @@ namespace Poker.Network
 
         static JsonLite ParseNull(string json, ref int i)
         {
-            if (!json.StartsWith("null", i, StringComparison.Ordinal)) throw new FormatException("Bad null");
+            if (!MatchAt(json, i, "null")) throw new FormatException("Bad null");
             i += 4;
             return new JsonLite { ValueKind = Kind.Null };
         }

@@ -174,7 +174,7 @@ namespace Poker.Network
             rt.anchoredPosition = pos;
             rt.sizeDelta = new Vector2(480f, 120f);
             var t = go.AddComponent<Text>();
-            t.font = UiFont.Regular();
+            t.font = UiFont.Builtin();
             t.text = text;
             t.fontSize = size;
             t.fontStyle = style;
@@ -182,6 +182,7 @@ namespace Poker.Network
             t.alignment = TextAnchor.MiddleCenter;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             t.verticalOverflow = VerticalWrapMode.Overflow;
+            UiFont.MakeCrisp(t, 0.3f);
             return t;
         }
     }

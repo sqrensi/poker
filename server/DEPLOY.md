@@ -69,9 +69,39 @@ npm install
 
 ## 4. Переменные окружения
 
+Сначала убедитесь, что папка сервера существует:
+
 ```bash
+# если клонировали через git:
+ls ~/poker/server/package.json
+
+# если загружали через scp:
+ls ~/poker-server/package.json
+```
+
+Если `No such file or directory` — вернитесь к **шагу 3** (git clone или scp).
+
+Создайте `.env` **в той папке, где лежит `package.json`**:
+
+```bash
+# вариант git (~/poker/server):
+nano ~/poker/server/.env
+
+# вариант scp (~/poker-server):
 nano ~/poker-server/.env
 ```
+
+Или одной командой (подставьте свой IP):
+
+```bash
+mkdir -p ~/poker-server
+cat > ~/poker-server/.env << 'EOF'
+PORT=8787
+PUBLIC_BASE=http://123.45.67.89:8787
+EOF
+```
+
+> Путь `~/poker-server` и `~/poker/server` — разные. Используйте тот, куда реально положили код на шаге 3.
 
 ### Без домена (только IP)
 
@@ -110,7 +140,8 @@ PUBLIC_BASE=https://poker.ваш-домен.ru
 ## 5. Проверка локально на VPS
 
 ```bash
-cd ~/poker-server
+cd ~/poker/server    # git clone
+# или: cd ~/poker-server   # scp
 npm start
 ```
 
@@ -123,6 +154,23 @@ curl http://127.0.0.1:8787/health
 Должен вернуться JSON с `"ok": true`.
 
 Остановите: `Ctrl+C`.
+
+### Ошибка `tsx: Permission denied`
+
+Обычно после `scp` с Windows или если `node_modules` скопировали вместе с проектом.
+
+```bash
+cd ~/poker/server   # ваша папка с package.json
+rm -rf node_modules
+npm install
+npm start
+```
+
+Или сразу без npm-скрипта:
+
+```bash
+node node_modules/tsx/dist/cli.mjs src/index.ts
+```
 
 ---
 

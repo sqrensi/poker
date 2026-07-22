@@ -1028,13 +1028,13 @@ namespace Poker.Presentation
                     _raiseAmountLabel.text = "";
                     return;
                 }
-                var legal = _onlineState.Legal;
-                int amount = Mathf.RoundToInt(_raiseSlider.value);
-                bool isBet = legal.CanBet;
-                bool atMax = amount >= legal.MaxRaiseTo && legal.MaxRaiseTo > 0;
-                if (atMax) _raiseAmountLabel.text = $"ALL IN\n{amount}";
-                else if (isBet) _raiseAmountLabel.text = $"BET\n{amount}";
-                else _raiseAmountLabel.text = $"RAISE\n{amount}";
+                var onlineLegal = _onlineState.Legal;
+                int onlineAmount = Mathf.RoundToInt(_raiseSlider.value);
+                bool onlineIsBet = onlineLegal.CanBet;
+                bool onlineAtMax = onlineAmount >= onlineLegal.MaxRaiseTo && onlineLegal.MaxRaiseTo > 0;
+                if (onlineAtMax) _raiseAmountLabel.text = $"ALL IN\n{onlineAmount}";
+                else if (onlineIsBet) _raiseAmountLabel.text = $"BET\n{onlineAmount}";
+                else _raiseAmountLabel.text = $"RAISE\n{onlineAmount}";
                 return;
             }
             if (_table == null) return;
@@ -1060,17 +1060,17 @@ namespace Poker.Presentation
             if (_onlineMode)
             {
                 if (_onlineState?.Legal == null) return;
-                var legal = _onlineState.Legal;
-                if (!legal.CanBet && !legal.CanRaise) return;
+                var onlineLegal = _onlineState.Legal;
+                if (!onlineLegal.CanBet && !onlineLegal.CanRaise) return;
                 _raiseMode = true;
                 if (_foldBtn != null) _foldBtn.gameObject.SetActive(false);
                 if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(false);
                 if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(false);
-                int min = Mathf.Max(1, legal.MinRaiseTo);
-                int max = Mathf.Max(min, legal.MaxRaiseTo);
-                _raiseSlider.minValue = min;
-                _raiseSlider.maxValue = max;
-                _raiseSlider.value = min;
+                int onlineMin = Mathf.Max(1, onlineLegal.MinRaiseTo);
+                int onlineMax = Mathf.Max(onlineMin, onlineLegal.MaxRaiseTo);
+                _raiseSlider.minValue = onlineMin;
+                _raiseSlider.maxValue = onlineMax;
+                _raiseSlider.value = onlineMin;
                 if (_raisePanel != null)
                 {
                     _raisePanel.SetActive(true);
@@ -1113,12 +1113,12 @@ namespace Poker.Presentation
             if (_onlineMode)
             {
                 if (!_raiseMode || _onlineState?.Legal == null) return;
-                var legal = _onlineState.Legal;
-                int amount = Mathf.RoundToInt(_raiseSlider.value);
-                amount = Mathf.Clamp(amount, legal.MinRaiseTo, legal.MaxRaiseTo);
+                var onlineLegal = _onlineState.Legal;
+                int onlineAmount = Mathf.RoundToInt(_raiseSlider.value);
+                onlineAmount = Mathf.Clamp(onlineAmount, onlineLegal.MinRaiseTo, onlineLegal.MaxRaiseTo);
                 ExitRaiseMode();
-                if (legal.CanBet) _onlineClient.SendAction("bet", amount);
-                else if (legal.CanRaise) _onlineClient.SendAction("raise", amount);
+                if (onlineLegal.CanBet) _onlineClient.SendAction("bet", onlineAmount);
+                else if (onlineLegal.CanRaise) _onlineClient.SendAction("raise", onlineAmount);
                 else _onlineClient.SendAction("allin");
                 SetActionButtons(false);
                 return;
@@ -1171,9 +1171,9 @@ namespace Poker.Presentation
             {
                 if (_onlineState?.Legal == null) return;
                 ExitRaiseMode();
-                var legal = _onlineState.Legal;
-                if (legal.CanCheck) _onlineClient.SendAction("check");
-                else if (legal.CanCall) _onlineClient.SendAction("call");
+                var onlineLegal = _onlineState.Legal;
+                if (onlineLegal.CanCheck) _onlineClient.SendAction("check");
+                else if (onlineLegal.CanCall) _onlineClient.SendAction("call");
                 SetActionButtons(false);
                 return;
             }
