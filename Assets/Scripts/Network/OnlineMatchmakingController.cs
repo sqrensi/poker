@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Poker.Identity;
+using Poker.Menu;
 using Poker.Presentation;
 
 namespace Poker.Network
@@ -13,20 +14,20 @@ namespace Poker.Network
         Text _error;
         GameObject _canvasGo;
         PokerOnlineClient _client;
+        MainMenuController _menu;
         bool _enteringGame;
         bool _cancelling;
 
-        public static void StartMatchmaking()
+        public static void StartMatchmaking(MainMenuController menu)
         {
-            foreach (var c in Object.FindObjectsOfType<Canvas>())
-            {
-                if (c.gameObject.name == "MenuCanvas")
-                    Object.Destroy(c.gameObject);
-            }
             foreach (var mm in Object.FindObjectsOfType<OnlineMatchmakingController>())
                 Object.Destroy(mm.gameObject);
+
+            menu?.HideMenu();
+
             var go = new GameObject("OnlineMatchmaking");
-            go.AddComponent<OnlineMatchmakingController>();
+            var ctrl = go.AddComponent<OnlineMatchmakingController>();
+            ctrl._menu = menu;
         }
 
         void Start()
@@ -161,8 +162,14 @@ namespace Poker.Network
                 Destroy(_canvasGo);
                 _canvasGo = null;
             }
+
+            var menu = _menu;
             Destroy(gameObject);
-            Menu.MainMenuController.Open();
+
+            if (menu != null)
+                menu.OnMatchmakingCancelled();
+            else
+                MainMenuController.Open();
         }
 
         void BuildUi()

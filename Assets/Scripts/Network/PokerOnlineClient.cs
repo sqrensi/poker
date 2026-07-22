@@ -46,6 +46,8 @@ namespace Poker.Network
 
         public void Dequeue() => SendObj("{\"type\":\"dequeue\"}");
 
+        public void LeaveMatch() => SendObj("{\"type\":\"leave\"}");
+
         public void SendAction(string action, int amount = 0)
         {
             if (amount > 0)
@@ -179,6 +181,10 @@ namespace Poker.Network
                             if (root.TryGetProperty("coins", out var c) && c.TryGetInt32(out var cv))
                                 SyncWalletCoins(cv);
                             QueueLeftEvent?.Invoke();
+                            break;
+                        case "left":
+                            if (root.TryGetProperty("coins", out var lc) && lc.TryGetInt32(out var lcv))
+                                SyncWalletCoins(lcv);
                             break;
                         case "error":
                             ErrorEvent?.Invoke(root.TryGetProperty("error", out var er) ? er.AsString() : "Ошибка");

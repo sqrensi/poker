@@ -112,6 +112,15 @@ export class Room {
     }
   }
 
+  forfeitPlayer(playerId: string, reason = "вышел из матча") {
+    const conn = this.seats.find((s) => s.playerId === playerId);
+    if (!conn) return;
+    conn.ws = null;
+    if (!this.started || !this.table) return;
+    this.table.forfeit(conn.seat, reason);
+    this.settleMatch();
+  }
+
   /** Хост может начать в любой момент при ≥2 местах (люди и/или боты). */
   start(): string | null {
     if (this.started) return "Уже запущено";
@@ -498,6 +507,10 @@ export class RoomManager {
       return { type: "queue_left", coins: p?.coins ?? 0 };
     }
 
+    if (msg.type === "leave") {
+      return this.leaveRoom(ws, playerId);
+    }
+
     if (msg.type === "leaderboard") {
       return { type: "leaderboard", entries: profiles.leaderboard(20) };
     }
@@ -606,16 +619,39 @@ export class RoomManager {
     if (!code) return;
     const room = this.rooms.get(code);
     if (!room) return;
-    room.removeByWs(ws);
-    const humans = room.seats.filter((s) => !s.isBot);
-    if (!room.started && humans.length === 0) {
-      this.rooms.delete(code);
-      return;
+    if (room.started && playerId) {
+      room.forfeitPlayer(playerId, "отключился");
+      room.broadcast();
+    } else {
+      room.removeByWs(ws);
+      const humans = room.seats.filter((s) => !s.isBot);
+      if (!room.started && humans.length === 0) {
+        this.rooms.delete(code);
+        return;
+      }
+      if (!room.started && playerId === room.hostId && humans.length) {
+        room.hostId = humans[0].playerId;
+      }
+      room.broadcast();
     }
-    if (!room.started && playerId === room.hostId && humans.length) {
-      room.hostId = humans[0].playerId;
+  }
+
+  leaveRoom(ws: WebSocket, playerId: string) {
+    const code = this.wsRoom.get(ws);
+    if (code) {
+      const room = this.rooms.get(code);
+      if (room?.started) {
+        room.forfeitPlayer(playerId, "вышел из матча");
+        room.broadcast();
+      } else if (room) {
+        room.removeByWs(ws);
+      }
     }
-    room.broadcast();
+    this.wsRoom.delete(ws);
+    this.wsPlayer.delete(ws);
+    this.wsProfile.delete(ws);
+    const p = profiles.get(playerId);
+    return { type: "left", coins: p?.coins ?? 0 };
   }
 
   onlineCount() {

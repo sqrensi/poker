@@ -503,4 +503,34 @@ export class PokerTable {
     }
     this.pot = 0;
   }
+
+  /** Игрок покинул матч: снимаем со стола и при необходимости завершаем партию. */
+  forfeit(seat: number, reason = "вышел из матча") {
+    const p = this.players[seat];
+    if (!p || p.eliminated) return;
+
+    const inBetting =
+      this.street === "preflop" ||
+      this.street === "flop" ||
+      this.street === "turn" ||
+      this.street === "river";
+
+    if (inBetting && this.acting === seat && this.canAct(p)) {
+      this.apply(seat, "fold");
+    } else if (inBetting) {
+      p.folded = true;
+      if (this.countInHand() <= 1) this.awardUncontested();
+    }
+
+    p.chips = 0;
+    p.eliminated = true;
+    p.allIn = false;
+    this.lastLog = `${p.name} ${reason}`;
+
+    if (this.countChips() < 2) {
+      this.finishMatch(`${p.name} ${reason}.`);
+    } else if (this.street === "handComplete") {
+      this.afterHandSettled();
+    }
+  }
 }

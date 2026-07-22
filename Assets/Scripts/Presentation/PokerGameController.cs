@@ -40,6 +40,7 @@ namespace Poker.Presentation
         Button _nextHandBtn;
         Button _rematchBtn;
         Button _menuBtn;
+        Button _exitBtn;
         Button _hintsToggleBtn;
         Text _hintsToggleLabel;
         GameObject _raisePanel;
@@ -547,6 +548,17 @@ namespace Poker.Presentation
             menuRt.sizeDelta = new Vector2(phone ? 200f : 200f, btnH);
             _menuBtn.gameObject.SetActive(false);
 
+            _exitBtn = CreateButton(canvasGo.transform, "Выйти", Vector2.zero,
+                UiTheme.GlassStrong, LeaveMatch, pill: true);
+            PinTopRight(_exitBtn, phone ? 16f : 20f, phone ? 16f : 20f, phone ? 140f : 130f, phone ? 52f : 48f);
+            var exitLabel = _exitBtn.GetComponentInChildren<Text>();
+            if (exitLabel != null)
+            {
+                exitLabel.fontSize = phone ? 20 : 18;
+                exitLabel.raycastTarget = false;
+            }
+            _exitBtn.transform.SetAsLastSibling();
+
             SetActionButtons(false);
             ApplyHintsVisibility();
 
@@ -565,6 +577,22 @@ namespace Poker.Presentation
             rt.pivot = new Vector2(1f, 0f);
             rt.anchoredPosition = new Vector2(-padRight, padBottom);
             rt.sizeDelta = new Vector2(width, height);
+        }
+
+        static void PinTopRight(Button btn, float padRight, float padTop, float width, float height)
+        {
+            if (btn == null) return;
+            var rt = btn.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-padRight, -padTop);
+            rt.sizeDelta = new Vector2(width, height);
+        }
+
+        void LeaveMatch()
+        {
+            ReturnToMenu();
         }
 
         void ReturnToMenu()
@@ -591,7 +619,10 @@ namespace Poker.Presentation
             if (_onlineMode && _onlineClient != null)
             {
                 _onlineClient.StateEvent -= OnOnlineState;
-                _onlineClient.Disconnect();
+                if (_onlineClient.Connected)
+                    _onlineClient.LeaveMatch();
+                else
+                    _onlineClient.Disconnect();
                 _onlineClient = null;
             }
             if (_table != null)
@@ -1077,6 +1108,7 @@ namespace Poker.Presentation
                     _raisePanel.transform.SetAsLastSibling();
                 }
                 UpdateRaiseLabel();
+                UpdateExitButtonVisibility();
                 return;
             }
 
@@ -1100,12 +1132,20 @@ namespace Poker.Presentation
                 _raisePanel.transform.SetAsLastSibling();
             }
             UpdateRaiseLabel();
+            UpdateExitButtonVisibility();
         }
 
         void ExitRaiseMode()
         {
             _raiseMode = false;
             if (_raisePanel != null) _raisePanel.SetActive(false);
+            UpdateExitButtonVisibility();
+        }
+
+        void UpdateExitButtonVisibility()
+        {
+            if (_exitBtn != null)
+                _exitBtn.gameObject.SetActive(!_raiseMode);
         }
 
         void ConfirmRaise()
@@ -1209,6 +1249,7 @@ namespace Poker.Presentation
                 if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(false);
                 if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(false);
                 UpdateRaiseLabel();
+                UpdateExitButtonVisibility();
                 return;
             }
 
@@ -1454,6 +1495,7 @@ namespace Poker.Presentation
                 _checkCallBtn.gameObject.SetActive(false);
                 _betRaiseBtn.gameObject.SetActive(false);
                 UpdateRaiseLabel();
+                UpdateExitButtonVisibility();
                 return;
             }
 

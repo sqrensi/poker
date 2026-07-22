@@ -11,10 +11,12 @@ namespace Poker.Menu
     {
         Text _nicknameText;
         Text _coinsText;
+        GameObject _canvasGo;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void BootMenu() { }
 
+        /// <summary>Вернуться в меню после игры (не пересоздаёт, если уже есть).</summary>
         public static void Open()
         {
             foreach (var g in Object.FindObjectsOfType<PokerGameController>())
@@ -23,16 +25,35 @@ namespace Poker.Menu
                 Object.Destroy(mm.gameObject);
             foreach (var c in Object.FindObjectsOfType<Canvas>())
             {
-                string n = c.gameObject.name;
-                if (n == "MatchmakingCanvas" || n == "MenuCanvas")
+                if (c.gameObject.name == "MatchmakingCanvas")
                     Object.Destroy(c.gameObject);
             }
             var client = Object.FindObjectOfType<PokerOnlineClient>();
             if (client != null)
                 Object.Destroy(client.gameObject);
-            if (Object.FindObjectOfType<MainMenuController>() != null) return;
+
+            var menu = Object.FindObjectOfType<MainMenuController>();
+            if (menu != null)
+            {
+                menu.ShowMenu();
+                return;
+            }
+
             var go = new GameObject("MainMenu");
             go.AddComponent<MainMenuController>();
+        }
+
+        public void HideMenu()
+        {
+            if (_canvasGo != null)
+                _canvasGo.SetActive(false);
+        }
+
+        public void ShowMenu()
+        {
+            if (_canvasGo != null)
+                _canvasGo.SetActive(true);
+            RefreshHeader();
         }
 
         void Start()
@@ -47,6 +68,8 @@ namespace Poker.Menu
             UiTheme.WarmUp();
 
             var canvasGo = new GameObject("MenuCanvas");
+            _canvasGo = canvasGo;
+            canvasGo.transform.SetParent(transform, false);
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 50;
@@ -201,7 +224,12 @@ namespace Poker.Menu
                 Debug.LogWarning("[Poker] Недостаточно монет для онлайн-матча");
                 return;
             }
-            OnlineMatchmakingController.StartMatchmaking();
+            OnlineMatchmakingController.StartMatchmaking(this);
+        }
+
+        internal void OnMatchmakingCancelled()
+        {
+            ShowMenu();
         }
 
         static Button CreatePillButton(Transform parent, string label, Vector2 pos,

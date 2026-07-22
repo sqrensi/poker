@@ -113,6 +113,16 @@ describe("PokerTable", () => {
     expect(sum).toBe(4000);
   });
 
+  it("forfeit ends match when one player remains", () => {
+    const t = new PokerTable(players(2), 5, 10, 42);
+    t.startHand();
+    t.forfeit(1, "вышел из матча");
+    expect(t.street).toBe("matchComplete");
+    expect(t.players[0].chips).toBeGreaterThan(0);
+    expect(t.players[1].chips).toBe(0);
+    expect(t.players[1].eliminated).toBe(true);
+  });
+
   it("ends match when only one player has chips", () => {
     const ps = players(2);
     ps[0].chips = 30;
