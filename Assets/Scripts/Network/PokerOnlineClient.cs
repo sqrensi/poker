@@ -154,9 +154,10 @@ namespace Poker.Network
                         return;
                     }
 
-                    using var doc = System.Text.Json.JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    string type = root.TryGetProperty("type", out var tp) ? tp.GetString() : "";
+                    if (!JsonLite.TryParse(json, out var root))
+                        return;
+
+                    string type = root.GetString("type");
                     switch (type)
                     {
                         case "welcome":
@@ -170,7 +171,7 @@ namespace Poker.Network
                             QueueLeftEvent?.Invoke();
                             break;
                         case "error":
-                            ErrorEvent?.Invoke(root.TryGetProperty("error", out var er) ? er.GetString() : "Ошибка");
+                            ErrorEvent?.Invoke(root.TryGetProperty("error", out var er) ? er.AsString() : "Ошибка");
                             break;
                     }
                 }

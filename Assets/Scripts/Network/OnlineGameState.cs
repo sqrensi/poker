@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 using Poker.Core;
 
 namespace Poker.Network
@@ -62,11 +61,11 @@ namespace Poker.Network
         public static bool TryParse(string json, out OnlineGameState state)
         {
             state = null;
+            if (!JsonLite.TryParse(json, out var root))
+                return false;
             try
             {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (root.TryGetProperty("type", out var tp) && tp.GetString() != "state")
+                if (root.GetString("type") != "state")
                     return false;
 
                 var s = new OnlineGameState
@@ -78,7 +77,7 @@ namespace Poker.Network
                     FromQueue = GetBool(root, "fromQueue"),
                 };
 
-                if (root.TryGetProperty("table", out var table) && table.ValueKind == JsonValueKind.Object)
+                if (root.TryGetProperty("table", out var table) && table.ValueKind == JsonLite.Kind.Object)
                 {
                     s.Street = GetStr(table, "street");
                     s.Pot = GetInt(table, "pot");
@@ -92,17 +91,17 @@ namespace Poker.Network
                     s.MatchWinner = GetInt(table, "matchWinner", -1);
                     s.BigBlind = GetInt(table, "bb", 10);
 
-                    if (table.TryGetProperty("board", out var board) && board.ValueKind == JsonValueKind.Array)
+                    if (table.TryGetProperty("board", out var board) && board.ValueKind == JsonLite.Kind.Array)
                     {
                         foreach (var c in board.EnumerateArray())
                         {
-                            string code = c.GetString();
+                            string code = c.AsString();
                             if (CardParser.TryParse(code, out var card))
                                 s.Board.Add(card);
                         }
                     }
 
-                    if (table.TryGetProperty("players", out var players) && players.ValueKind == JsonValueKind.Array)
+                    if (table.TryGetProperty("players", out var players) && players.ValueKind == JsonLite.Kind.Array)
                     {
                         foreach (var p in players.EnumerateArray())
                         {
@@ -118,11 +117,11 @@ namespace Poker.Network
                                 AllIn = GetBool(p, "allIn"),
                                 Eliminated = GetBool(p, "eliminated"),
                             };
-                            if (p.TryGetProperty("hole", out var hole) && hole.ValueKind == JsonValueKind.Array)
+                            if (p.TryGetProperty("hole", out var hole) && hole.ValueKind == JsonLite.Kind.Array)
                             {
                                 foreach (var hc in hole.EnumerateArray())
                                 {
-                                    string code = hc.GetString();
+                                    string code = hc.AsString();
                                     if (code == "??") { op.HoleHidden = true; continue; }
                                     if (CardParser.TryParse(code, out var card))
                                         op.Hole.Add(card);
@@ -132,7 +131,7 @@ namespace Poker.Network
                         }
                     }
 
-                    if (table.TryGetProperty("legal", out var legal) && legal.ValueKind == JsonValueKind.Object)
+                    if (table.TryGetProperty("legal", out var legal) && legal.ValueKind == JsonLite.Kind.Object)
                     {
                         s.Legal = new OnlineLegalActions
                         {
@@ -159,21 +158,17 @@ namespace Poker.Network
             }
         }
 
-        static string GetStr(JsonElement el, string name, string def = "")
-            => el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? def : def;
+        static string GetStr(JsonLite el, string name, string def = "")
+            => el.TryGetProperty(name, out var v) && v.ValueKind == JsonLite.Kind.String ? v.AsString() : def;
 
-        static int GetInt(JsonElement el, string name, int def = 0)
+        static int GetInt(JsonLite el, string name, int def = 0)
             => el.TryGetProperty(name, out var v) && v.TryGetInt32(out var i) ? i : def;
 
-        static bool GetBool(JsonElement el, string name, bool def = false)
+        static bool GetBool(JsonLite el, string name, bool def = false)
         {
             if (!el.TryGetProperty(name, out var v)) return def;
-            return v.ValueKind switch
-            {
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                _ => def
-            };
+            if (v.ValueKind == JsonLite.Kind.Bool) return v.BoolValue;
+            return def;
         }
     }
 
@@ -187,12 +182,11 @@ namespace Poker.Network
         public static bool TryParse(string json, out OnlineQueueStatus st)
         {
             st = null;
+            if (!JsonLite.TryParse(json, out var root))
+                return false;
             try
             {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                var type = root.TryGetProperty("type", out var tp) ? tp.GetString() : "";
-                if (type != "queue_status") return false;
+                if (root.GetString("type") != "queue_status") return false;
                 st = new OnlineQueueStatus
                 {
                     QueueSize = root.TryGetProperty("queueSize", out var qs) && qs.TryGetInt32(out var q) ? q : 0,
@@ -216,16 +210,16 @@ namespace Poker.Network
         public static bool TryParse(string json, out OnlineProfile p)
         {
             p = null;
+            if (!JsonLite.TryParse(json, out var root))
+                return false;
             try
             {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (root.TryGetProperty("type", out var tp) && tp.GetString() != "profile")
+                if (root.GetString("type") != "profile")
                     return false;
                 p = new OnlineProfile
                 {
-                    PlayerId = root.TryGetProperty("playerId", out var id) ? id.GetString() : "",
-                    Nickname = root.TryGetProperty("nickname", out var n) ? n.GetString() : "",
+                    PlayerId = root.TryGetProperty("playerId", out var id) ? id.AsString() : "",
+                    Nickname = root.TryGetProperty("nickname", out var n) ? n.AsString() : "",
                     Rating = root.TryGetProperty("rating", out var r) && r.TryGetInt32(out var rv) ? rv : 1000,
                     Coins = root.TryGetProperty("coins", out var c) && c.TryGetInt32(out var cv) ? cv : 0,
                 };
