@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using Poker.Game;
+using Poker.Network;
 
 namespace Poker.Presentation
 {
@@ -54,6 +55,31 @@ namespace Poker.Presentation
         WinnerOverlay _winnerOverlay;
         RectTransform _canvasRoot;
 
+        bool _onlineMode;
+        PokerOnlineClient _onlineClient;
+        OnlineGameState _onlineState;
+        int _myServerSeat = -1;
+
+        public static void StartOnline(PokerOnlineClient client, OnlineGameState initialState)
+        {
+            foreach (var g in Object.FindObjectsOfType<PokerGameController>())
+                Object.Destroy(g.gameObject);
+            var go = new GameObject("PokerGame");
+            var ctrl = go.AddComponent<PokerGameController>();
+            ctrl._onlineMode = true;
+            ctrl._onlineClient = client;
+            ctrl.playerCount = 4;
+            ctrl._onlineState = initialState;
+            if (client != null)
+                client.StateEvent += ctrl.OnOnlineState;
+        }
+
+        void OnOnlineState(OnlineGameState state)
+        {
+            _onlineState = state;
+            RefreshAll();
+        }
+
         void Start()
         {
             _hintsEnabled = PlayerPrefs.GetInt(HintsPrefsKey, 1) == 1;
@@ -99,11 +125,23 @@ namespace Poker.Presentation
             }
 
             yield return null;
+            if (_onlineMode)
+            {
+                ResolveMyServerSeat();
+                RefreshAll();
+                yield break;
+            }
             StartMatch();
         }
 
         void Update()
         {
+            if (_onlineMode)
+            {
+                UpdateOnline();
+                return;
+            }
+
             if (_table == null) return;
 
             if (_table.Street == Street.MatchComplete)
@@ -167,6 +205,56 @@ namespace Poker.Presentation
                     RefreshAll();
                 }
             }
+        }
+
+        void UpdateOnline()
+        {
+            if (_onlineState == null) return;
+            bool matchOver = _onlineState.Street == "matchComplete";
+            if (matchOver)
+            {
+                ExitRaiseMode();
+                SetActionButtons(false);
+                if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
+                if (_rematchBtn != null) _rematchBtn.gameObject.SetActive(false);
+                if (_menuBtn != null)
+                {
+                    _menuBtn.gameObject.SetActive(true);
+                    _menuBtn.transform.SetAsLastSibling();
+                }
+                return;
+            }
+
+            if (_rematchBtn != null) _rematchBtn.gameObject.SetActive(false);
+            if (_menuBtn != null) _menuBtn.gameObject.SetActive(false);
+            if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
+
+            if (_onlineState.IsMyTurn(_onlineState.Legal))
+                RefreshOnlineActionButtons();
+            else
+            {
+                ExitRaiseMode();
+                SetActionButtons(false);
+            }
+        }
+
+        void ResolveMyServerSeat()
+        {
+            if (_onlineState == null) return;
+            foreach (var p in _onlineState.Players)
+            {
+                if (p.Id == _onlineState.YouId)
+                {
+                    _myServerSeat = p.Seat;
+                    return;
+                }
+            }
+        }
+
+        int VisualSeat(int serverSeat)
+        {
+            if (_myServerSeat < 0) return serverSeat;
+            return (serverSeat - _myServerSeat + playerCount) % playerCount;
         }
 
         void StartMatch()
@@ -500,6 +588,12 @@ namespace Poker.Presentation
         {
             ExitRaiseMode();
             if (_winnerOverlay != null) _winnerOverlay.Hide();
+            if (_onlineMode && _onlineClient != null)
+            {
+                _onlineClient.StateEvent -= OnOnlineState;
+                _onlineClient.Disconnect();
+                _onlineClient = null;
+            }
             if (_table != null)
             {
                 _table.StateChanged -= RefreshAll;
@@ -539,10 +633,37 @@ namespace Poker.Presentation
 
         void RefreshHint()
         {
-            if (!_hintsEnabled || _hintText == null || _table == null) return;
+            if (!_hintsEnabled || _hintText == null) return;
+            if (_onlineMode)
+            {
+                if (_onlineState == null) return;
+                OnlineSeatPlayer me = null;
+                foreach (var p in _onlineState.Players)
+                    if (p.Id == _onlineState.YouId) { me = p; break; }
+                if (me == null || me.Hole.Count < 2) return;
+                var board = _onlineState.Board;
+                var street = ParseOnlineStreet(_onlineState.Street);
+                var temp = new Player(0, me.Name, PlayerType.Human, me.Chips);
+                temp.HoleCards.AddRange(me.Hole);
+                _hintText.text = HandHint.ForPlayer(temp, board, street);
+                return;
+            }
+            if (_table == null) return;
             var human = _table.Players[0];
             _hintText.text = HandHint.ForPlayer(human, _table.Board, _table.Street);
         }
+
+        static Street ParseOnlineStreet(string s) => s switch
+        {
+            "preflop" => Street.Preflop,
+            "flop" => Street.Flop,
+            "turn" => Street.Turn,
+            "river" => Street.River,
+            "showdown" => Street.Showdown,
+            "handComplete" => Street.HandComplete,
+            "matchComplete" => Street.MatchComplete,
+            _ => Street.Waiting
+        };
 
         static Image CreatePanel(Transform parent, string name,
             Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot,
@@ -899,7 +1020,24 @@ namespace Poker.Presentation
 
         void UpdateRaiseLabel()
         {
-            if (_raiseAmountLabel == null || _raiseSlider == null || _table == null) return;
+            if (_raiseAmountLabel == null || _raiseSlider == null) return;
+            if (_onlineMode)
+            {
+                if (_onlineState?.Legal == null || !_raiseMode)
+                {
+                    _raiseAmountLabel.text = "";
+                    return;
+                }
+                var legal = _onlineState.Legal;
+                int amount = Mathf.RoundToInt(_raiseSlider.value);
+                bool isBet = legal.CanBet;
+                bool atMax = amount >= legal.MaxRaiseTo && legal.MaxRaiseTo > 0;
+                if (atMax) _raiseAmountLabel.text = $"ALL IN\n{amount}";
+                else if (isBet) _raiseAmountLabel.text = $"BET\n{amount}";
+                else _raiseAmountLabel.text = $"RAISE\n{amount}";
+                return;
+            }
+            if (_table == null) return;
             if (!_table.AwaitingHumanAction)
             {
                 _raiseAmountLabel.text = "";
@@ -919,6 +1057,29 @@ namespace Poker.Presentation
 
         void EnterRaiseMode()
         {
+            if (_onlineMode)
+            {
+                if (_onlineState?.Legal == null) return;
+                var legal = _onlineState.Legal;
+                if (!legal.CanBet && !legal.CanRaise) return;
+                _raiseMode = true;
+                if (_foldBtn != null) _foldBtn.gameObject.SetActive(false);
+                if (_checkCallBtn != null) _checkCallBtn.gameObject.SetActive(false);
+                if (_betRaiseBtn != null) _betRaiseBtn.gameObject.SetActive(false);
+                int min = Mathf.Max(1, legal.MinRaiseTo);
+                int max = Mathf.Max(min, legal.MaxRaiseTo);
+                _raiseSlider.minValue = min;
+                _raiseSlider.maxValue = max;
+                _raiseSlider.value = min;
+                if (_raisePanel != null)
+                {
+                    _raisePanel.SetActive(true);
+                    _raisePanel.transform.SetAsLastSibling();
+                }
+                UpdateRaiseLabel();
+                return;
+            }
+
             if (!_table.AwaitingHumanAction) return;
             var legal = _table.GetLegalActions(_table.ActingSeat);
             if (!legal.CanBet && !legal.CanRaise) return;
@@ -949,6 +1110,20 @@ namespace Poker.Presentation
 
         void ConfirmRaise()
         {
+            if (_onlineMode)
+            {
+                if (!_raiseMode || _onlineState?.Legal == null) return;
+                var legal = _onlineState.Legal;
+                int amount = Mathf.RoundToInt(_raiseSlider.value);
+                amount = Mathf.Clamp(amount, legal.MinRaiseTo, legal.MaxRaiseTo);
+                ExitRaiseMode();
+                if (legal.CanBet) _onlineClient.SendAction("bet", amount);
+                else if (legal.CanRaise) _onlineClient.SendAction("raise", amount);
+                else _onlineClient.SendAction("allin");
+                SetActionButtons(false);
+                return;
+            }
+
             if (!_table.AwaitingHumanAction || !_raiseMode) return;
             int seat = _table.ActingSeat;
             var legal = _table.GetLegalActions(seat);
@@ -967,6 +1142,23 @@ namespace Poker.Presentation
 
         void OnHuman(ActionType type)
         {
+            if (_onlineMode)
+            {
+                if (_onlineState?.Legal == null) return;
+                ExitRaiseMode();
+                string action = type switch
+                {
+                    ActionType.Fold => "fold",
+                    ActionType.Check => "check",
+                    ActionType.Call => "call",
+                    ActionType.AllIn => "allin",
+                    _ => "fold"
+                };
+                _onlineClient.SendAction(action);
+                SetActionButtons(false);
+                return;
+            }
+
             if (!_table.AwaitingHumanAction) return;
             ExitRaiseMode();
             _table.TryApplyAction(_table.ActingSeat, new PlayerAction(type));
@@ -975,6 +1167,17 @@ namespace Poker.Presentation
 
         void OnCheckOrCall()
         {
+            if (_onlineMode)
+            {
+                if (_onlineState?.Legal == null) return;
+                ExitRaiseMode();
+                var legal = _onlineState.Legal;
+                if (legal.CanCheck) _onlineClient.SendAction("check");
+                else if (legal.CanCall) _onlineClient.SendAction("call");
+                SetActionButtons(false);
+                return;
+            }
+
             if (!_table.AwaitingHumanAction) return;
             ExitRaiseMode();
             int seat = _table.ActingSeat;
@@ -1031,6 +1234,12 @@ namespace Poker.Presentation
 
         void RefreshAll()
         {
+            if (_onlineMode)
+            {
+                RefreshAllOnline();
+                return;
+            }
+
             if (_table == null) return;
 
             _hudTitle.text = $"Раздача №{_table.HandNumber}  ·  {PokerRu.StreetName(_table.Street)}";
@@ -1116,6 +1325,154 @@ namespace Poker.Presentation
                 RefreshActionButtons();
             else if (_table.Street != Street.HandComplete)
                 SetActionButtons(false);
+        }
+
+        void RefreshAllOnline()
+        {
+            if (_onlineState == null) return;
+            ResolveMyServerSeat();
+
+            _hudTitle.text = $"Раздача №{_onlineState.HandNumber}  ·  {PokerRu.StreetNameFromServer(_onlineState.Street)}";
+            _potText.text = $"БАНК  {_onlineState.Pot}";
+            if (!string.IsNullOrEmpty(_onlineState.LastLog) && _onlineState.LastLog != _hudTitle.text)
+                _hudTitle.text += $"\n{_onlineState.LastLog}";
+
+            bool showTurn = _onlineState.Acting >= 0 &&
+                            (_onlineState.Street == "preflop" || _onlineState.Street == "flop" ||
+                             _onlineState.Street == "turn" || _onlineState.Street == "river");
+            if (showTurn)
+            {
+                int visual = VisualSeat(_onlineState.Acting);
+                if (visual >= 0 && visual < _seats.Count)
+                    _turnArrow.PointAt(_seats[visual].WorldPosition);
+                else
+                    _turnArrow.Hide();
+            }
+            else
+                _turnArrow.Hide();
+
+            for (int i = 0; i < 5; i++)
+            {
+                if (i < _onlineState.Board.Count)
+                {
+                    _boardCards[i].gameObject.SetActive(true);
+                    _boardCards[i].SetCard(_onlineState.Board[i], true);
+                }
+                else
+                    _boardCards[i].gameObject.SetActive(false);
+            }
+
+            for (int vi = 0; vi < _seats.Count; vi++)
+            {
+                OnlineSeatPlayer op = null;
+                foreach (var p in _onlineState.Players)
+                {
+                    if (VisualSeat(p.Seat) == vi) { op = p; break; }
+                }
+
+                if (op == null)
+                {
+                    if (vi < _seatNameLabels.Count) _seatNameLabels[vi].text = "—";
+                    continue;
+                }
+
+                bool acting = _onlineState.Acting == op.Seat;
+                bool dealer = _onlineState.Dealer == op.Seat;
+                bool isMe = op.Id == _onlineState.YouId;
+                var temp = new Player(vi, op.Name, isMe ? PlayerType.Human : PlayerType.Ai, op.Chips)
+                {
+                    BetThisStreet = op.BetStreet,
+                    HasFolded = op.Folded,
+                    IsAllIn = op.AllIn,
+                    IsEliminated = op.Eliminated
+                };
+                _seats[vi].Refresh(temp, dealer, acting, ParseOnlineStreet(_onlineState.Street), _onlineState.BigBlind, false);
+
+                if (vi < _seatNameLabels.Count)
+                {
+                    string tag = acting ? " ●" : "";
+                    if (op.Folded) tag = " · фолд";
+                    else if (op.Eliminated || op.Chips <= 0) tag = " · out";
+                    _seatNameLabels[vi].text = op.Name + tag;
+                    _seatNameLabels[vi].color = acting ? UiTheme.CoralHot : op.Folded ? UiTheme.TextDim : UiTheme.TextMain;
+                }
+                if (vi < _seatChipLabels.Count)
+                {
+                    _seatChipLabels[vi].text = op.Eliminated ? "—" : $"{op.Chips}";
+                    _seatChipLabels[vi].color = op.Folded ? UiTheme.TextDim : UiTheme.Cyan;
+                }
+
+                bool reveal = isMe ||
+                              _onlineState.Street == "showdown" ||
+                              _onlineState.Street == "handComplete" ||
+                              _onlineState.Street == "matchComplete";
+                if (op.Folded || op.Eliminated) reveal = isMe && op.Hole.Count > 0;
+
+                bool faceTowardMe = reveal && !isMe;
+                var holes = _holeCards[vi];
+                for (int c = 0; c < 2; c++)
+                {
+                    if (op.Eliminated || (op.HoleHidden && !isMe) || (op.Hole.Count == 0 && !isMe))
+                    {
+                        holes[c].gameObject.SetActive(false);
+                        continue;
+                    }
+                    if (c < op.Hole.Count)
+                    {
+                        holes[c].gameObject.SetActive(true);
+                        holes[c].SetFacingViewer(faceTowardMe);
+                        holes[c].SetCard(op.Hole[c], reveal || isMe);
+                    }
+                    else
+                        holes[c].gameObject.SetActive(false);
+                }
+            }
+
+            PositionSeatLabels();
+            RefreshHint();
+
+            if (_onlineState.IsMyTurn(_onlineState.Legal))
+                RefreshOnlineActionButtons();
+            else if (_onlineState.Street != "handComplete")
+                SetActionButtons(false);
+        }
+
+        void RefreshOnlineActionButtons()
+        {
+            if (_foldBtn == null || _checkCallBtn == null || _betRaiseBtn == null) return;
+            var legal = _onlineState?.Legal;
+            if (legal == null || !legal.HasAny)
+            {
+                SetActionButtons(false);
+                return;
+            }
+
+            if (_raiseMode)
+            {
+                if (_raisePanel != null) _raisePanel.SetActive(true);
+                _foldBtn.gameObject.SetActive(false);
+                _checkCallBtn.gameObject.SetActive(false);
+                _betRaiseBtn.gameObject.SetActive(false);
+                UpdateRaiseLabel();
+                return;
+            }
+
+            SetActionButtons(true);
+            _foldBtn.interactable = legal.CanFold;
+            _checkCallBtn.interactable = legal.CanCheck || legal.CanCall;
+            var checkCallLabel = _checkCallBtn.GetComponentInChildren<Text>();
+            if (checkCallLabel != null)
+                checkCallLabel.text = legal.CanCheck ? "Чек" : $"Колл {legal.CallAmount}";
+
+            bool canBetRaise = legal.CanBet || legal.CanRaise;
+            _betRaiseBtn.interactable = canBetRaise;
+            var betLabel = _betRaiseBtn.GetComponentInChildren<Text>();
+            if (betLabel != null)
+            {
+                if (legal.CanBet) betLabel.text = "Бет";
+                else if (legal.CanRaise) betLabel.text = "Рейз";
+                else betLabel.text = "Олл-ин";
+            }
         }
 
         bool IsSeatHandWinner(int seat)

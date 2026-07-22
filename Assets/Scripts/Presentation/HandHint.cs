@@ -23,6 +23,22 @@ namespace Poker.Presentation
             }
         }
 
+        public static string StreetNameFromServer(string street)
+        {
+            return street switch
+            {
+                "waiting" => "Ожидание",
+                "preflop" => "Префлоп",
+                "flop" => "Флоп",
+                "turn" => "Тёрн",
+                "river" => "Ривер",
+                "showdown" => "Вскрытие",
+                "handComplete" => "Раздача окончена",
+                "matchComplete" => "Матч окончен",
+                _ => street ?? ""
+            };
+        }
+
         public static string CategoryName(HandCategory c)
         {
             switch (c)

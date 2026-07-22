@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Poker.Presentation;
 using Poker.Identity;
+using Poker.Network;
 
 namespace Poker.Menu
 {
@@ -120,7 +121,7 @@ namespace Poker.Menu
             });
 
             // CTA: coral pill
-            CreatePillButton(canvasGo.transform, "Играть онлайн", new Vector2(0f, y0),
+            CreatePillButton(canvasGo.transform, "Онлайн матч", new Vector2(0f, y0),
                 btnW, btnH, UiTheme.Coral, Color.white, StartOnline);
 
             // Secondary glass pill + cyan rim
@@ -162,10 +163,7 @@ namespace Poker.Menu
 
         void StartOnline()
         {
-            string id = PlayerIdentityService.GetOrCreatePlayerId();
-            string host = LanAddressUtil.GetSavedHost();
-            if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
-            Application.OpenURL(LanAddressUtil.BuildUrl(host, id, autoQueue: true));
+            OnlineMatchmakingController.StartMatchmaking();
         }
 
         static Button CreatePillButton(Transform parent, string label, Vector2 pos,

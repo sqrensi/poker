@@ -34,7 +34,7 @@ namespace Poker.Menu
             root.anchorMax = new Vector2(0.5f, 0f);
             root.pivot = new Vector2(0.5f, 0f);
             root.anchoredPosition = new Vector2(0f, phone ? 22f : 28f);
-            root.sizeDelta = new Vector2(phone ? 520f : 480f, 118f);
+            root.sizeDelta = new Vector2(phone ? 520f : 480f, phone ? 110f : 108f);
 
             var bg = gameObject.AddComponent<Image>();
             bg.color = UiTheme.Glass;

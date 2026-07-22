@@ -67,5 +67,25 @@ namespace Poker.Identity
             if (q.Count == 0) return raw;
             return raw + "?" + string.Join("&", q);
         }
+
+        public static string BuildWsUrl(string hostOrUrl)
+        {
+            string raw = (hostOrUrl ?? "").Trim();
+            if (string.IsNullOrEmpty(raw)) raw = "127.0.0.1:8787";
+            raw = raw.Replace("\\", "/").TrimEnd('/');
+
+            if (raw.StartsWith("ws://", System.StringComparison.OrdinalIgnoreCase) ||
+                raw.StartsWith("wss://", System.StringComparison.OrdinalIgnoreCase))
+                return raw;
+
+            if (raw.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase))
+                return "ws://" + raw.Substring("http://".Length);
+            if (raw.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase))
+                return "wss://" + raw.Substring("https://".Length);
+
+            if (!raw.Contains(":"))
+                raw = raw + ":" + DefaultPort;
+            return "ws://" + raw;
+        }
     }
 }

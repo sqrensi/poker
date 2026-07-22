@@ -571,6 +571,21 @@ export class RoomManager {
   tickQueue() {
     this.formMatchedTables();
     this.broadcastQueueStatuses();
+    this.tickOnlineAutoHands();
+  }
+
+  /** Онлайн-матчи из очереди: следующая раздача автоматически. */
+  tickOnlineAutoHands() {
+    for (const room of this.rooms.values()) {
+      if (!room.fromQueue || !room.started || !room.table) continue;
+      if (room.table.street === "handComplete") {
+        const err = room.nextHand();
+        if (!err) {
+          room.settleMatch();
+          room.broadcast();
+        }
+      }
+    }
   }
 
   tickBots() {

@@ -8,8 +8,8 @@
 - Домен (опционально, но рекомендуется для HTTPS)
 - SSH-доступ к серверу
 
-Сервер слушает порт **8787** (HTTP + WebSocket). Для продакшена ставим **Nginx** как reverse proxy с TLS.
-NAUv56tLTm
+Сервер слушает порт **8787** (HTTP + WebSocket). Для продакшена с доменом — Nginx + HTTPS; **без домена** можно открыть порт 8787 напрямую по IP.
+
 ---
 
 ## 1. Подключение к VPS
@@ -73,14 +73,37 @@ npm install
 nano ~/poker-server/.env
 ```
 
-Содержимое:
+### Без домена (только IP)
+
+Подставьте **публичный IP** вашего VPS:
+
+```env
+PORT=8787
+PUBLIC_BASE=http://123.45.67.89:8787
+```
+
+Игроки открывают в браузере: `http://123.45.67.89:8787`  
+Unity: в `Assets/Resources/PokerNetworkConfig.asset` укажите **Server Ws Url Release** = `ws://123.45.67.89:8787` и соберите клиент.
+
+На VPS откройте порт в firewall:
+
+```bash
+sudo ufw allow 8787/tcp
+sudo ufw allow OpenSSH
+sudo ufw enable
+```
+
+Nginx и certbot **не нужны** — сервер слушает снаружи на 8787.  
+HTTPS по IP без домена обычно не делают (Let's Encrypt выдаёт сертификаты только на домен).
+
+### С доменом
 
 ```env
 PORT=8787
 PUBLIC_BASE=https://poker.ваш-домен.ru
 ```
 
-`PUBLIC_BASE` — публичный URL, который видят клиенты (для invite-ссылок).
+`PUBLIC_BASE` — URL, который видят клиенты (invite-ссылки, welcome). Должен совпадать с тем, как игроки заходят в браузер.
 
 ---
 
@@ -220,10 +243,14 @@ cp ~/poker-server/data/profiles.json ~/profiles-backup-$(date +%F).json
 
 ## 10. Unity-клиент
 
-В Unity укажите адрес VPS вместо LAN:
+Адрес сервера задаётся в ассете **PokerNetworkConfig** (`Assets/Resources/PokerNetworkConfig.asset`):
 
-- PlayerPrefs ключ `poker_lan_host` → `https://poker.ваш-домен.ru`
-- Кнопка «Играть онлайн» открывает браузер с `?pid=...&queue=1` — сразу начинается поиск матча
+| Поле | Когда |
+|------|--------|
+| **Server Ws Url** | Редактор / локальная разработка (`ws://127.0.0.1:8787`) |
+| **Server Ws Url Release** | Релизная сборка (`ws://123.45.67.89:8787` или `wss://poker.ваш-домен.ru`) |
+
+Игрокам ничего вводить не нужно — **Онлайн матч** подключается к серверу из конфига.
 
 ---
 
