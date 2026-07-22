@@ -11,8 +11,10 @@ namespace Poker.Network
         Text _title;
         Text _status;
         Text _error;
+        GameObject _canvasGo;
         PokerOnlineClient _client;
         bool _enteringGame;
+        bool _cancelling;
 
         public static void StartMatchmaking()
         {
@@ -21,6 +23,8 @@ namespace Poker.Network
                 if (c.gameObject.name == "MenuCanvas")
                     Object.Destroy(c.gameObject);
             }
+            foreach (var mm in Object.FindObjectsOfType<OnlineMatchmakingController>())
+                Object.Destroy(mm.gameObject);
             var go = new GameObject("OnlineMatchmaking");
             go.AddComponent<OnlineMatchmakingController>();
         }
@@ -38,6 +42,7 @@ namespace Poker.Network
             _client.MatchedEvent += OnMatched;
             _client.StateEvent += OnState;
             _client.DisconnectedEvent += OnDisconnected;
+            _client.QueueLeftEvent += OnQueueLeft;
 
             string wsUrl = PokerNetworkConfigProvider.ResolveWsUrl();
             _status.text = "Подключение…";
@@ -68,7 +73,10 @@ namespace Poker.Network
         void OnQueueStatus(OnlineQueueStatus qs)
         {
             _error.text = "";
-            _status.text = $"В очереди: {qs.QueueSize} / 4\nОжидание: {qs.WaitedSec} сек\nМонеты: {qs.Coins}";
+            int max = qs.MaxPlayers > 0 ? qs.MaxPlayers : 4;
+            _status.text = $"В очереди: {qs.QueueSize} / {max}\nОжидание: {qs.WaitedSec} сек";
+            if (qs.QueueSize >= qs.MinPlayers && qs.QueueSize < max)
+                _status.text += $"\nСтарт через {qs.FillTimeoutSec} сек без новых игроков";
         }
 
         void OnMatched()
@@ -81,6 +89,11 @@ namespace Poker.Network
             if (_enteringGame || !state.Started) return;
             _enteringGame = true;
             _client.StateEvent -= OnState;
+            if (_canvasGo != null)
+            {
+                Destroy(_canvasGo);
+                _canvasGo = null;
+            }
             PokerGameController.StartOnline(_client, state);
             Destroy(gameObject);
         }
@@ -92,18 +105,61 @@ namespace Poker.Network
 
         void OnDisconnected(string msg)
         {
-            if (_enteringGame) return;
+            if (_enteringGame || _cancelling) return;
             if (_error != null) _error.text = msg;
+        }
+
+        void OnQueueLeft()
+        {
+            if (!_cancelling) return;
+            FinishCancel();
         }
 
         void CancelSearch()
         {
-            if (_client != null)
+            if (_cancelling || _enteringGame) return;
+            _cancelling = true;
+            if (_status != null) _status.text = "Отмена…";
+
+            if (_client != null && _client.Connected)
             {
                 _client.Dequeue();
+                StartCoroutine(FinishCancelAfterTimeout());
+                return;
+            }
+
+            FinishCancel();
+        }
+
+        System.Collections.IEnumerator FinishCancelAfterTimeout()
+        {
+            yield return new WaitForSeconds(1.5f);
+            if (_cancelling)
+                FinishCancel();
+        }
+
+        void FinishCancel()
+        {
+            if (_client != null && _client.Coins > 0)
+                PlayerWalletService.SetCoins(_client.Coins);
+
+            _cancelling = false;
+            if (_client != null)
+            {
+                _client.ErrorEvent -= OnError;
+                _client.QueueStatusEvent -= OnQueueStatus;
+                _client.MatchedEvent -= OnMatched;
+                _client.StateEvent -= OnState;
+                _client.DisconnectedEvent -= OnDisconnected;
+                _client.QueueLeftEvent -= OnQueueLeft;
                 _client.Disconnect();
                 Destroy(_client.gameObject);
                 _client = null;
+            }
+            if (_canvasGo != null)
+            {
+                Destroy(_canvasGo);
+                _canvasGo = null;
             }
             Destroy(gameObject);
             Menu.MainMenuController.Open();
@@ -111,7 +167,8 @@ namespace Poker.Network
 
         void BuildUi()
         {
-            var canvasGo = new GameObject("MatchmakingCanvas");
+            _canvasGo = new GameObject("MatchmakingCanvas");
+            var canvasGo = _canvasGo;
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 60;
@@ -161,8 +218,13 @@ namespace Poker.Network
             cimg.color = UiTheme.GlassStrong;
             UiTheme.ApplyRounded(cimg);
             var btn = cancel.AddComponent<Button>();
+            btn.targetGraphic = cimg;
             btn.onClick.AddListener(CancelSearch);
-            MakeText(cancel.transform, "Отмена", Vector2.zero, 22, FontStyle.Bold, UiTheme.TextMain);
+            var cancelLabel = MakeText(cancel.transform, "Отмена", Vector2.zero, 22, FontStyle.Bold, UiTheme.TextMain);
+            var cancelLabelRt = cancelLabel.rectTransform;
+            cancelLabelRt.anchorMin = Vector2.zero;
+            cancelLabelRt.anchorMax = Vector2.one;
+            cancelLabelRt.offsetMin = cancelLabelRt.offsetMax = Vector2.zero;
         }
 
         static Text MakeText(Transform parent, string text, Vector2 pos, int size, FontStyle style, Color color)
@@ -182,6 +244,7 @@ namespace Poker.Network
             t.alignment = TextAnchor.MiddleCenter;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             t.verticalOverflow = VerticalWrapMode.Overflow;
+            t.raycastTarget = false;
             UiFont.MakeCrisp(t, 0.3f);
             return t;
         }

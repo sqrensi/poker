@@ -8,7 +8,7 @@ const STORE_PATH = path.join(DATA_DIR, "profiles.json");
 
 export const DEFAULT_RATING = 1000;
 export const DEFAULT_COINS = 50_000;
-export const ONLINE_BUY_IN = 1_000;
+export const ONLINE_BUY_IN = 5_000;
 export const MIN_NICK = 3;
 export const MAX_NICK = 16;
 

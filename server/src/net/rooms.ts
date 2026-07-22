@@ -410,7 +410,7 @@ export class RoomManager {
             type: "matched",
             code: room.code,
             players: batch.players.length,
-            maxPlayers: QUEUE_MAX,
+            maxPlayers: batch.players.length,
           })
         );
       }

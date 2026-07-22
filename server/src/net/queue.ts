@@ -1,9 +1,9 @@
 import type { WebSocket } from "ws";
 
-/** Онлайн-матч: ровно 4 игрока из очереди. */
-export const QUEUE_MIN = 4;
+/** Онлайн-матч: 2–4 игрока; при 4 — сразу, иначе старт через 5 сек. */
+export const QUEUE_MIN = 2;
 export const QUEUE_MAX = 4;
-export const QUEUE_FILL_MS = 0;
+export const QUEUE_FILL_MS = 5000;
 
 export interface QueueEntry {
   ticketId: string;
@@ -20,7 +20,10 @@ export interface MatchedTable {
 }
 
 /**
- * FIFO-матчмейкинг: как только в очереди 4 человека — отдельный стол.
+ * FIFO-матчмейкинг:
+ * - 4 игрока → стол сразу
+ * - 3 игрока → стол через 5 сек после прихода 3-го
+ * - 2 игрока → стол через 5 сек после прихода 2-го (если не пришли 3-й/4-й)
  */
 export class MatchQueue {
   private queue: QueueEntry[] = [];
@@ -57,12 +60,27 @@ export class MatchQueue {
   }
 
   /** Достаёт готовые столы (может быть несколько за один тик). */
-  tryMatch(_now = Date.now()): MatchedTable[] {
+  tryMatch(now = Date.now()): MatchedTable[] {
     const out: MatchedTable[] = [];
+
     while (this.queue.length >= QUEUE_MAX) {
-      const batch = this.queue.splice(0, QUEUE_MAX);
-      out.push({ players: batch });
+      out.push({ players: this.queue.splice(0, QUEUE_MAX) });
     }
+
+    if (this.queue.length === 3) {
+      const third = this.queue[2];
+      if (now - third.enqueuedAt >= QUEUE_FILL_MS) {
+        out.push({ players: this.queue.splice(0, 3) });
+      }
+    }
+
+    if (this.queue.length === 2) {
+      const second = this.queue[1];
+      if (now - second.enqueuedAt >= QUEUE_FILL_MS) {
+        out.push({ players: this.queue.splice(0, 2) });
+      }
+    }
+
     return out;
   }
 
@@ -77,6 +95,7 @@ export class MatchQueue {
       waitedSec: Math.floor((Date.now() - e.enqueuedAt) / 1000),
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      fillTimeoutSec: Math.floor(QUEUE_FILL_MS / 1000),
       playersNeeded: Math.max(0, QUEUE_MAX - this.queue.length),
     };
   }
@@ -86,6 +105,7 @@ export class MatchQueue {
       queueSize: this.queue.length,
       minPlayers: QUEUE_MIN,
       maxPlayers: QUEUE_MAX,
+      fillTimeoutSec: Math.floor(QUEUE_FILL_MS / 1000),
       playersNeeded: Math.max(0, QUEUE_MAX - this.queue.length),
     };
   }

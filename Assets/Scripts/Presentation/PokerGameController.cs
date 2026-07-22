@@ -12,7 +12,7 @@ namespace Poker.Presentation
         const string HintsPrefsKey = "poker_hints_enabled";
 
         [SerializeField] int playerCount = 4;
-        [SerializeField] int startingChips = 1000;
+        [SerializeField] int startingChips = 5000;
         [SerializeField] int smallBlind = 5;
         [SerializeField] int bigBlind = 10;
         [SerializeField] float aiDelaySeconds = 0.55f;

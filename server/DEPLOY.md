@@ -176,6 +176,17 @@ node node_modules/tsx/dist/cli.mjs src/index.ts
 
 ## 6. systemd — автозапуск
 
+Сначала узнайте путь к `node`:
+
+```bash
+which node
+# обычно /usr/bin/node
+```
+
+**Важно:** `WorkingDirectory` и `User` должны совпадать с тем, где реально лежит проект.
+
+### Если проект у root в `/root/poker/server`
+
 ```bash
 sudo nano /etc/systemd/system/poker.service
 ```
@@ -187,10 +198,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=poker
-WorkingDirectory=/home/poker/poker-server
-EnvironmentFile=/home/poker/poker-server/.env
-ExecStart=/usr/bin/npm start
+WorkingDirectory=/root/poker/server
+Environment=PORT=8787
+Environment=PUBLIC_BASE=http://2.56.89.239:8787
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/index.ts
 Restart=always
 RestartSec=5
 
@@ -198,7 +209,30 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-> Путь `WorkingDirectory` поправьте под вашу папку (`~/poker/server` или `~/poker-server`).
+### Если проект у пользователя poker
+
+```ini
+[Unit]
+Description=Poker Hold'em Online Server
+After=network.target
+
+[Service]
+Type=simple
+User=poker
+WorkingDirectory=/home/poker/poker/server
+Environment=PORT=8787
+Environment=PUBLIC_BASE=http://2.56.89.239:8787
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs src/index.ts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Не используйте** `EnvironmentFile=.../.env`, если файл `.env` ещё не создан — systemd не запустит сервис. Либо создайте `.env`, либо задайте `Environment=` как выше.
+
+Перед запуском остановите ручной `npm start` (`Ctrl+C`), иначе порт 8787 занят.
 
 ```bash
 sudo systemctl daemon-reload
@@ -207,7 +241,20 @@ sudo systemctl start poker
 sudo systemctl status poker
 ```
 
-Логи:
+### Если `start` падает
+
+```bash
+systemctl status poker.service
+journalctl -xeu poker.service --no-pager | tail -30
+```
+
+Частые причины:
+- `User=poker`, а проект в `/root/...` — уберите `User=` или перенесите проект
+- `EnvironmentFile=` указывает на несуществующий `.env`
+- неверный `WorkingDirectory`
+- порт 8787 уже занят (`ss -tlnp | grep 8787`)
+
+Логи в реальном времени:
 
 ```bash
 journalctl -u poker -f
@@ -306,11 +353,11 @@ cp ~/poker-server/data/profiles.json ~/profiles-backup-$(date +%F).json
 
 | Параметр | Значение |
 |----------|----------|
-| Игроков в матче | **4** |
+| Игроков в матче | **2–4** (при 4 — сразу; иначе через **5 сек**) |
 | Стартовый баланс | **50 000** монет |
-| Взнос в очередь | **1 000** монет (возврат при отмене поиска) |
-| Выплата победителю | **4 000** монет |
-| Стек за столом | 1 000 фишек |
+| Взнос в очередь | **5 000** монет (возврат при отмене поиска) |
+| Выплата победителю | **N × 5 000** монет (N — число людей в матче) |
+| Стек за столом | 5 000 фишек |
 
 ---
 

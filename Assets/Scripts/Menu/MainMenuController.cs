@@ -9,7 +9,8 @@ namespace Poker.Menu
     /// <summary>Главное меню — Glass Night (pill-кнопки, орбы, без квадратов).</summary>
     public sealed class MainMenuController : MonoBehaviour
     {
-        Text _status;
+        Text _nicknameText;
+        Text _coinsText;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void BootMenu() { }
@@ -18,6 +19,17 @@ namespace Poker.Menu
         {
             foreach (var g in Object.FindObjectsOfType<PokerGameController>())
                 Object.Destroy(g.gameObject);
+            foreach (var mm in Object.FindObjectsOfType<OnlineMatchmakingController>())
+                Object.Destroy(mm.gameObject);
+            foreach (var c in Object.FindObjectsOfType<Canvas>())
+            {
+                string n = c.gameObject.name;
+                if (n == "MatchmakingCanvas" || n == "MenuCanvas")
+                    Object.Destroy(c.gameObject);
+            }
+            var client = Object.FindObjectOfType<PokerOnlineClient>();
+            if (client != null)
+                Object.Destroy(client.gameObject);
             if (Object.FindObjectOfType<MainMenuController>() != null) return;
             var go = new GameObject("MainMenu");
             go.AddComponent<MainMenuController>();
@@ -109,16 +121,17 @@ namespace Poker.Menu
             sub.alignment = TextAnchor.MiddleCenter;
             sub.GetComponent<Outline>().effectDistance = new Vector2(0.4f, -0.4f);
 
-            _status = MakeText(canvasGo.transform, PlayerIdentityService.GetNickname(),
-                new Vector2(0f, phone ? 90f : 100f), new Vector2(400f, 32f),
+            _nicknameText = MakeText(canvasGo.transform, PlayerIdentityService.GetNickname(),
+                new Vector2(0f, phone ? 98f : 108f), new Vector2(400f, 32f),
                 20, FontStyle.Normal, UiTheme.Cyan);
-            _status.alignment = TextAnchor.MiddleCenter;
+            _nicknameText.alignment = TextAnchor.MiddleCenter;
 
-            MainMenuNicknameEditor.Create(canvasGo.transform, () =>
-            {
-                if (_status != null)
-                    _status.text = PlayerIdentityService.GetNickname();
-            });
+            _coinsText = MakeText(canvasGo.transform, FormatCoinsLine(),
+                new Vector2(0f, phone ? 62f : 72f), new Vector2(400f, 28f),
+                18, FontStyle.Bold, UiTheme.TextMain);
+            _coinsText.alignment = TextAnchor.MiddleCenter;
+
+            MainMenuNicknameEditor.Create(canvasGo.transform, RefreshHeader);
 
             // CTA: coral pill
             CreatePillButton(canvasGo.transform, "Онлайн матч", new Vector2(0f, y0),
@@ -142,8 +155,27 @@ namespace Poker.Menu
                 });
         }
 
+        void RefreshHeader()
+        {
+            if (_nicknameText != null)
+                _nicknameText.text = PlayerIdentityService.GetNickname();
+            if (_coinsText != null)
+                _coinsText.text = FormatCoinsLine();
+        }
+
+        static string FormatCoinsLine()
+        {
+            return $"Монеты: {PlayerWalletService.FormatCoins(PlayerWalletService.GetCoins())}  ·  взнос {PlayerWalletService.FormatCoins(PlayerWalletService.GameBuyIn)}";
+        }
+
         void StartBots()
         {
+            if (!PlayerWalletService.TryChargeBuyIn(out string err))
+            {
+                RefreshHeader();
+                Debug.LogWarning("[Poker] " + err);
+                return;
+            }
             // Убрать старые меню/партии, чтобы UI не дублировался.
             foreach (var c in FindObjectsOfType<Canvas>())
             {
@@ -163,6 +195,12 @@ namespace Poker.Menu
 
         void StartOnline()
         {
+            if (!PlayerWalletService.CanAffordBuyIn())
+            {
+                RefreshHeader();
+                Debug.LogWarning("[Poker] Недостаточно монет для онлайн-матча");
+                return;
+            }
             OnlineMatchmakingController.StartMatchmaking();
         }
 
@@ -190,6 +228,7 @@ namespace Poker.Menu
 
             var text = MakeText(go.transform, label, Vector2.zero, new Vector2(w, h), 26, FontStyle.Bold, labelColor);
             text.alignment = TextAnchor.MiddleCenter;
+            text.raycastTarget = false;
             var trt = text.rectTransform;
             trt.anchorMin = Vector2.zero;
             trt.anchorMax = Vector2.one;

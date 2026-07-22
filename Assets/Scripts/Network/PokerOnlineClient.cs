@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Poker.Identity;
+using Poker.Identity;
 using UnityEngine;
 
 namespace Poker.Network
@@ -123,6 +124,15 @@ namespace Poker.Network
             Enqueue(() => DisconnectedEvent?.Invoke("Соединение закрыто"));
         }
 
+        void SyncWalletCoins(int coins)
+        {
+            if (coins > 0)
+            {
+                Coins = coins;
+                PlayerWalletService.SetCoins(coins);
+            }
+        }
+
         void HandleJson(string json)
         {
             Enqueue(() =>
@@ -131,20 +141,20 @@ namespace Poker.Network
                 {
                     if (OnlineGameState.TryParse(json, out var state))
                     {
-                        if (state.Coins > 0) Coins = state.Coins;
+                        SyncWalletCoins(state.Coins);
                         StateEvent?.Invoke(state);
                         return;
                     }
                     if (OnlineQueueStatus.TryParse(json, out var qs))
                     {
-                        if (qs.Coins > 0) Coins = qs.Coins;
+                        SyncWalletCoins(qs.Coins);
                         QueueStatusEvent?.Invoke(qs);
                         return;
                     }
                     if (OnlineProfile.TryParse(json, out var profile))
                     {
                         Authed = true;
-                        Coins = profile.Coins;
+                        SyncWalletCoins(profile.Coins);
                         ProfileEvent?.Invoke(profile);
                         if (_wantQueueAfterAuth)
                         {
@@ -167,7 +177,7 @@ namespace Poker.Network
                             break;
                         case "queue_left":
                             if (root.TryGetProperty("coins", out var c) && c.TryGetInt32(out var cv))
-                                Coins = cv;
+                                SyncWalletCoins(cv);
                             QueueLeftEvent?.Invoke();
                             break;
                         case "error":

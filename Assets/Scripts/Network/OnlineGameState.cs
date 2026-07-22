@@ -178,6 +178,9 @@ namespace Poker.Network
         public int PlayersNeeded;
         public int WaitedSec;
         public int Coins;
+        public int MinPlayers = 2;
+        public int MaxPlayers = 4;
+        public int FillTimeoutSec = 5;
 
         public static bool TryParse(string json, out OnlineQueueStatus st)
         {
@@ -193,6 +196,9 @@ namespace Poker.Network
                     PlayersNeeded = root.TryGetProperty("playersNeeded", out var pn) && pn.TryGetInt32(out var n) ? n : 0,
                     WaitedSec = root.TryGetProperty("waitedSec", out var ws) && ws.TryGetInt32(out var w) ? w : 0,
                     Coins = root.TryGetProperty("coins", out var c) && c.TryGetInt32(out var coins) ? coins : 0,
+                    MinPlayers = root.TryGetProperty("minPlayers", out var mn) && mn.TryGetInt32(out var min) ? min : 2,
+                    MaxPlayers = root.TryGetProperty("maxPlayers", out var mx) && mx.TryGetInt32(out var max) ? max : 4,
+                    FillTimeoutSec = root.TryGetProperty("fillTimeoutSec", out var ft) && ft.TryGetInt32(out var fill) ? fill : 5,
                 };
                 return true;
             }

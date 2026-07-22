@@ -8,10 +8,25 @@ import {
   DEFAULT_COINS,
   ONLINE_BUY_IN,
 } from "../src/profile/store.js";
-import { MatchQueue, QUEUE_MAX } from "../src/net/queue.js";
+import { MatchQueue, QUEUE_MAX, QUEUE_MIN, QUEUE_FILL_MS } from "../src/net/queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataPath = path.join(__dirname, "..", "data", "profiles.json");
+
+const fakeWs = { readyState: 1 } as any;
+
+function enqueuePlayer(q: MatchQueue, i: number, at: number) {
+  q.enqueue({
+    ticketId: `t${i}`,
+    playerId: `p${i}`,
+    nickname: `N${i}`,
+    rating: 1000,
+    ws: fakeWs,
+    buyInPaid: true,
+  });
+  const entry = q.getTicket(`p${i}`);
+  if (entry) entry.enqueuedAt = at;
+}
 
 describe("ProfileStore", () => {
   beforeEach(() => {
@@ -60,39 +75,60 @@ describe("ProfileStore", () => {
 });
 
 describe("MatchQueue", () => {
-  it("matches exactly 4 players", () => {
+  it("matches exactly 4 players immediately", () => {
     const q = new MatchQueue();
-    const fakeWs = { readyState: 1 } as any;
-    for (let i = 0; i < QUEUE_MAX; i++) {
-      q.enqueue({
-        ticketId: `t${i}`,
-        playerId: `p${i}`,
-        nickname: `N${i}`,
-        rating: 1000,
-        ws: fakeWs,
-        buyInPaid: true,
-      });
-    }
-    const tables = q.tryMatch();
+    const now = Date.now();
+    for (let i = 0; i < QUEUE_MAX; i++) enqueuePlayer(q, i, now);
+    const tables = q.tryMatch(now);
     expect(tables.length).toBe(1);
     expect(tables[0].players.length).toBe(QUEUE_MAX);
     expect(q.size).toBe(0);
   });
 
-  it("does not match with fewer than 4", () => {
+  it("does not match 2 players before timeout", () => {
     const q = new MatchQueue();
-    const fakeWs = { readyState: 1 } as any;
-    for (let i = 0; i < 3; i++) {
-      q.enqueue({
-        ticketId: `t${i}`,
-        playerId: `p${i}`,
-        nickname: `N${i}`,
-        rating: 1000,
-        ws: fakeWs,
-        buyInPaid: true,
-      });
-    }
-    expect(q.tryMatch().length).toBe(0);
-    expect(q.size).toBe(3);
+    const now = 1_000_000;
+    enqueuePlayer(q, 0, now);
+    enqueuePlayer(q, 1, now);
+    expect(q.tryMatch(now + QUEUE_FILL_MS - 1).length).toBe(0);
+    expect(q.size).toBe(2);
+  });
+
+  it("matches 2 players after 5 second timeout", () => {
+    const q = new MatchQueue();
+    const now = 1_000_000;
+    enqueuePlayer(q, 0, now);
+    enqueuePlayer(q, 1, now);
+    const tables = q.tryMatch(now + QUEUE_FILL_MS);
+    expect(tables.length).toBe(1);
+    expect(tables[0].players.length).toBe(2);
+    expect(q.size).toBe(0);
+  });
+
+  it("matches 3 players after third waited 5 seconds", () => {
+    const q = new MatchQueue();
+    const now = 1_000_000;
+    enqueuePlayer(q, 0, now);
+    enqueuePlayer(q, 1, now);
+    enqueuePlayer(q, 2, now + 1000);
+    expect(q.tryMatch(now + 5999).length).toBe(0);
+    const tables = q.tryMatch(now + 6000);
+    expect(tables.length).toBe(1);
+    expect(tables[0].players.length).toBe(3);
+  });
+
+  it("does not match 1 player", () => {
+    const q = new MatchQueue();
+    enqueuePlayer(q, 0, Date.now());
+    expect(q.tryMatch(Date.now() + QUEUE_FILL_MS * 2).length).toBe(0);
+    expect(q.size).toBe(1);
+  });
+
+  it("reports min/max in status", () => {
+    const q = new MatchQueue();
+    enqueuePlayer(q, 0, Date.now());
+    const st = q.statusFor("p0");
+    expect(st?.minPlayers).toBe(QUEUE_MIN);
+    expect(st?.maxPlayers).toBe(QUEUE_MAX);
   });
 });
