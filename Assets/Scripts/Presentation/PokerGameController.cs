@@ -54,6 +54,7 @@ namespace Poker.Presentation
         bool _raiseMode;
         float _aiTimer;
         bool _aiPending;
+        bool _handEndBusy;
         Camera _cam;
         TurnArrow _turnArrow;
         Transform _tableRoot;
@@ -179,9 +180,11 @@ namespace Poker.Presentation
             {
                 ExitRaiseMode();
                 SetActionButtons(false);
-                if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(true);
+                if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
                 return;
             }
+
+            if (_handEndBusy) return;
 
             if (_nextHandBtn != null) _nextHandBtn.gameObject.SetActive(false);
 
@@ -304,12 +307,47 @@ namespace Poker.Presentation
 
         void OnHandEnded()
         {
+            _handEndBusy = true;
+            ExitRaiseMode();
+            SetActionButtons(false);
             RefreshAll();
-            if (_winnerOverlay == null || _table == null) return;
+
+            if (_winnerOverlay == null || _table == null)
+            {
+                _handEndBusy = false;
+                return;
+            }
+
+            _winnerOverlay.Finished -= OnHandBannerFinished;
+            _winnerOverlay.Finished += OnHandBannerFinished;
+
             if (_table.IsMatchOver)
+            {
+                _handEndBusy = false;
                 _winnerOverlay.ShowMatchEnd(_table);
-            else
-                _winnerOverlay.Show(_table);
+            }
+            else if (!_winnerOverlay.Show(_table))
+            {
+                _handEndBusy = false;
+                _table.StartNewHand();
+                RefreshAll();
+            }
+        }
+
+        void OnHandBannerFinished()
+        {
+            if (_winnerOverlay != null)
+                _winnerOverlay.Finished -= OnHandBannerFinished;
+
+            if (!_handEndBusy || _onlineMode || _table == null || _table.IsMatchOver)
+            {
+                _handEndBusy = false;
+                return;
+            }
+
+            _handEndBusy = false;
+            _table.StartNewHand();
+            RefreshAll();
         }
 
         void OnMatchEnded()
@@ -644,7 +682,12 @@ namespace Poker.Presentation
         {
             if (_table == null) return;
             ExitRaiseMode();
-            if (_winnerOverlay != null) _winnerOverlay.Hide();
+            if (_winnerOverlay != null)
+            {
+                _winnerOverlay.Finished -= OnHandBannerFinished;
+                _winnerOverlay.Hide();
+            }
+            _handEndBusy = false;
             _aiPending = false;
             _table.RestartMatch(startingChips);
             RefreshAll();
@@ -653,7 +696,12 @@ namespace Poker.Presentation
         void CleanupMatch(bool skipOnlineLeave = false)
         {
             ExitRaiseMode();
-            if (_winnerOverlay != null) _winnerOverlay.Hide();
+            if (_winnerOverlay != null)
+            {
+                _winnerOverlay.Finished -= OnHandBannerFinished;
+                _winnerOverlay.Hide();
+            }
+            _handEndBusy = false;
             if (_onlineMode && _onlineClient != null)
             {
                 _onlineClient.StateEvent -= OnOnlineState;
@@ -1461,6 +1509,8 @@ namespace Poker.Presentation
 
             if (_table == null) return;
 
+            _table.TryResolveUncontestedPot();
+
             EnsureHandDisplayCycle(_table.HandNumber);
 
             RefreshHudHeader(_table.HandNumber, GetLocalCombinationName(_table), _table.Pot);
@@ -1554,9 +1604,9 @@ namespace Poker.Presentation
 
             PositionSeatLabels();
 
-            if (_table.AwaitingHumanAction)
+            if (_table.AwaitingHumanAction && !_handEndBusy)
                 RefreshActionButtons();
-            else if (_table.Street != Street.HandComplete)
+            else
                 SetActionButtons(false);
         }
 

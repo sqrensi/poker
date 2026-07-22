@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -7,12 +8,13 @@ using Poker.Game;
 
 namespace Poker.Presentation
 {
-    /// <summary>Полноэкранный баннер победителя ~3 сек с плавным появлением/исчезновением.</summary>
+    /// <summary>Полноэкранный баннер победителя: 3 сек на экране + плавные анимации.</summary>
     public sealed class WinnerOverlay : MonoBehaviour
     {
-        const float Duration = 3f;
-        const float FadeIn = 0.35f;
-        const float FadeOut = 0.45f;
+        const float HoldDuration = 3f;
+        const float FadeIn = 0.45f;
+        const float FadeOut = 0.55f;
+        const float BackdropMaxAlpha = 0.78f;
 
         CanvasGroup _group;
         RectTransform _panelRt;
@@ -22,6 +24,8 @@ namespace Poker.Presentation
         Text _subtitle;
         Coroutine _anim;
         int _shownHand = -1;
+
+        public event Action Finished;
 
         public static WinnerOverlay Create(Transform canvasParent)
         {
@@ -118,11 +122,11 @@ namespace Poker.Presentation
             return text;
         }
 
-        public void Show(PokerTable table)
+        public bool Show(PokerTable table)
         {
-            if (table == null || table.LastResult == null) return;
-            if (table.IsMatchOver) return; // матч перекрывает баннер раздачи
-            if (table.HandNumber == _shownHand) return;
+            if (table == null || table.LastResult == null) return false;
+            if (table.IsMatchOver) return false;
+            if (table.HandNumber == _shownHand) return false;
             _shownHand = table.HandNumber;
 
             FormatResult(table, out string title, out string subtitle);
@@ -133,6 +137,7 @@ namespace Poker.Presentation
                 StopCoroutine(_anim);
             gameObject.SetActive(true);
             _anim = StartCoroutine(Animate(autoHide: true));
+            return true;
         }
 
         public void ShowMatchEnd(PokerTable table)
@@ -208,13 +213,31 @@ namespace Poker.Presentation
                 foreach (var kv in wonChips)
                 {
                     var p = table.Players[kv.Key];
-                    title = p.Type == PlayerType.Human ? "Вы выиграли!" : $"{p.Name} побеждает!";
+                    bool humanInGame = false;
+                    for (int i = 0; i < table.Players.Count; i++)
+                    {
+                        if (table.Players[i].Type == PlayerType.Human)
+                        {
+                            humanInGame = true;
+                            break;
+                        }
+                    }
+
+                    if (p.Type == PlayerType.Human)
+                        title = "Вы выиграли!";
+                    else if (humanInGame)
+                        title = $"Победитель: {p.Name}";
+                    else
+                        title = $"{p.Name} побеждает!";
+
                     var sb = new StringBuilder();
+                    if (p.Type != PlayerType.Human && humanInGame)
+                        sb.Append("Вы проиграли эту раздачу  ·  ");
                     sb.Append($"+{kv.Value} фишек");
                     if (!string.IsNullOrEmpty(handDesc) && handDesc != "Без вскрытия")
                         sb.Append("  ·  ").Append(handDesc);
                     else if (handDesc == "Без вскрытия")
-                        sb.Append("  ·  соперники сбросили");
+                        sb.Append("  ·  все соперники сбросили");
                     subtitle = sb.ToString();
                     return;
                 }
@@ -233,23 +256,32 @@ namespace Poker.Presentation
         IEnumerator Animate(bool autoHide)
         {
             _group.alpha = 0f;
-            // Всегда пропускаем клики к кнопкам под баннером.
             _group.blocksRaycasts = false;
             _group.interactable = false;
-            _panelRt.localScale = Vector3.one * 0.82f;
+            _panelRt.localScale = Vector3.one * 0.76f;
+            SetBackdropAlpha(0f);
+            SetTextAlpha(_title, 0f);
+            SetTextAlpha(_subtitle, 0f);
 
             float t = 0f;
             while (t < FadeIn)
             {
-                t += Time.deltaTime;
+                t += Time.unscaledDeltaTime;
                 float u = Mathf.Clamp01(t / FadeIn);
                 float e = EaseOutBack(u);
                 _group.alpha = u;
-                _panelRt.localScale = Vector3.LerpUnclamped(Vector3.one * 0.82f, Vector3.one, e);
+                _panelRt.localScale = Vector3.LerpUnclamped(Vector3.one * 0.76f, Vector3.one, e);
+                SetBackdropAlpha(Mathf.Lerp(0f, BackdropMaxAlpha, u));
+                SetTextAlpha(_title, Mathf.Clamp01(u * 1.35f));
+                SetTextAlpha(_subtitle, Mathf.Clamp01((u - 0.12f) * 1.35f));
                 yield return null;
             }
+
             _group.alpha = 1f;
             _panelRt.localScale = Vector3.one;
+            SetBackdropAlpha(BackdropMaxAlpha);
+            SetTextAlpha(_title, 1f);
+            SetTextAlpha(_subtitle, 1f);
 
             if (!autoHide)
             {
@@ -257,24 +289,53 @@ namespace Poker.Presentation
                 yield break;
             }
 
-            float hold = Duration - FadeIn - FadeOut;
-            if (hold > 0f)
-                yield return new WaitForSeconds(hold);
+            t = 0f;
+            while (t < HoldDuration)
+            {
+                t += Time.unscaledDeltaTime;
+                float pulse = 1f + Mathf.Sin(t * 2.4f) * 0.012f;
+                _panelRt.localScale = Vector3.one * pulse;
+                yield return null;
+            }
 
             t = 0f;
             while (t < FadeOut)
             {
-                t += Time.deltaTime;
+                t += Time.unscaledDeltaTime;
                 float u = Mathf.Clamp01(t / FadeOut);
+                float e = EaseInQuad(u);
                 _group.alpha = 1f - u;
-                _panelRt.localScale = Vector3.Lerp(Vector3.one, Vector3.one * 0.94f, u);
+                _panelRt.localScale = Vector3.Lerp(Vector3.one, Vector3.one * 0.92f, e);
+                SetBackdropAlpha(Mathf.Lerp(BackdropMaxAlpha, 0f, u));
+                SetTextAlpha(_title, 1f - u);
+                SetTextAlpha(_subtitle, 1f - u);
                 yield return null;
             }
 
             _group.alpha = 0f;
+            SetBackdropAlpha(0f);
             gameObject.SetActive(false);
             _anim = null;
+            Finished?.Invoke();
         }
+
+        void SetBackdropAlpha(float a)
+        {
+            if (_backdrop == null) return;
+            var c = _backdrop.color;
+            c.a = a;
+            _backdrop.color = c;
+        }
+
+        static void SetTextAlpha(Text text, float a)
+        {
+            if (text == null) return;
+            var c = text.color;
+            c.a = a;
+            text.color = c;
+        }
+
+        static float EaseInQuad(float x) => x * x;
 
         static float EaseOutBack(float x)
         {

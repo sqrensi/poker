@@ -362,7 +362,7 @@ namespace Poker.Game
 
         void AdvanceAfterAction()
         {
-            if (CountInHand() == 1)
+            if (CountInHand() <= 1)
             {
                 AwardUncontested();
                 return;
@@ -375,8 +375,22 @@ namespace Poker.Game
             }
 
             ActingSeat = NextCanAct(ActingSeat);
+            if (CountInHand() <= 1)
+            {
+                AwardUncontested();
+                return;
+            }
+
             if (ActingSeat < 0)
                 GoNextStreet();
+        }
+
+        /// <summary>Если в раздаче остался один игрок — завершить без вскрытия.</summary>
+        public void TryResolveUncontestedPot()
+        {
+            if (Street < Street.Preflop || Street > Street.River) return;
+            if (CountInHand() > 1) return;
+            AwardUncontested();
         }
 
         bool BettingRoundDone()
@@ -438,6 +452,12 @@ namespace Poker.Game
             }
 
             ActingSeat = NextCanAct(DealerSeat);
+            if (CountInHand() <= 1)
+            {
+                AwardUncontested();
+                return;
+            }
+
             if (ActingSeat < 0)
                 RunOutToShowdown();
         }
@@ -488,6 +508,7 @@ namespace Poker.Game
             ActingSeat = -1;
             AfterHandSettled();
             HandEnded?.Invoke();
+            Notify();
         }
 
         void DoShowdown()
