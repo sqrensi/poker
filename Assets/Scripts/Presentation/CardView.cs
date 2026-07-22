@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using Poker.Core;
 
@@ -13,6 +14,13 @@ namespace Poker.Presentation
         float _seatYaw;
         Vector3 _closedPos;
         Vector3 _revealPos;
+        Vector3 _baseScale = Vector3.one;
+        bool _foldedAway;
+        bool _foldAnimating;
+        Coroutine _foldRoutine;
+
+        public bool IsFoldedAway => _foldedAway;
+        public bool IsFoldAnimating => _foldAnimating;
 
         public static CardView Create(
             Transform parent,
@@ -45,11 +53,9 @@ namespace Poker.Presentation
             transform.localRotation = Quaternion.Euler(-90f, 180f + yawDegrees, 0f);
         }
 
-        /// <summary>
-        /// При вскрытии — лицом к камере; для боковых ещё выстраивает в ряд по X.
-        /// </summary>
         public void SetFacingViewer(bool faceTowardViewer)
         {
+            if (_foldAnimating || _foldedAway) return;
             ApplyYaw(faceTowardViewer ? 0f : _seatYaw);
             transform.localPosition = faceTowardViewer ? _revealPos : _closedPos;
         }
@@ -81,11 +87,13 @@ namespace Poker.Presentation
             float spriteWidth = _renderer.sprite.bounds.size.x;
             if (spriteWidth < 0.0001f) return;
             float s = worldWidth / spriteWidth;
-            transform.localScale = new Vector3(-s, s, 1f);
+            _baseScale = new Vector3(-s, s, 1f);
+            transform.localScale = _baseScale;
         }
 
         public void SetCard(Card card, bool faceUp)
         {
+            if (_foldAnimating || _foldedAway) return;
             _card = card;
             _hasCard = true;
             _faceUp = faceUp;
@@ -94,6 +102,7 @@ namespace Poker.Presentation
 
         public void ShowBack()
         {
+            if (_foldAnimating || _foldedAway) return;
             _faceUp = false;
             _hasCard = false;
             Refresh();
@@ -112,6 +121,68 @@ namespace Poker.Presentation
             _renderer.sprite = sprite;
             FitWidth(_width);
             _renderer.color = (_faceUp && _hasCard) ? Color.white : new Color(0.92f, 0.94f, 1f, 1f);
+        }
+
+        /// <summary>Анимация сброса — карта уезжает к центру стола и исчезает.</summary>
+        public void PlayFoldAway(Vector3 localDrift, float delay = 0f)
+        {
+            if (_foldedAway || _foldAnimating) return;
+            if (_foldRoutine != null)
+                StopCoroutine(_foldRoutine);
+            _foldRoutine = StartCoroutine(FoldAwayRoutine(localDrift, delay));
+        }
+
+        IEnumerator FoldAwayRoutine(Vector3 localDrift, float delay)
+        {
+            _foldAnimating = true;
+            if (delay > 0f)
+                yield return new WaitForSeconds(delay);
+
+            gameObject.SetActive(true);
+            float dur = 0.42f;
+            float t = 0f;
+            Vector3 startPos = transform.localPosition;
+            Vector3 startScale = transform.localScale;
+            Color startColor = _renderer != null ? _renderer.color : Color.white;
+
+            while (t < dur)
+            {
+                t += Time.deltaTime;
+                float u = Mathf.Clamp01(t / dur);
+                float ease = u * u * (3f - 2f * u);
+                transform.localPosition = startPos + localDrift * ease;
+                transform.localScale = Vector3.Lerp(startScale, startScale * 0.55f, ease);
+                if (_renderer != null)
+                {
+                    float a = 1f - ease;
+                    _renderer.color = new Color(startColor.r, startColor.g, startColor.b, a);
+                }
+                yield return null;
+            }
+
+            _foldAnimating = false;
+            _foldedAway = true;
+            _foldRoutine = null;
+            gameObject.SetActive(false);
+        }
+
+        public void ResetForNewHand()
+        {
+            if (_foldRoutine != null)
+            {
+                StopCoroutine(_foldRoutine);
+                _foldRoutine = null;
+            }
+            _foldAnimating = false;
+            _foldedAway = false;
+            _faceUp = false;
+            _hasCard = false;
+            gameObject.SetActive(true);
+            ApplyYaw(_seatYaw);
+            transform.localPosition = _closedPos;
+            transform.localScale = _baseScale;
+            if (_renderer != null)
+                _renderer.color = new Color(0.92f, 0.94f, 1f, 1f);
         }
     }
 }

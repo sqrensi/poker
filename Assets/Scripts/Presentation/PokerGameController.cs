@@ -10,8 +10,6 @@ namespace Poker.Presentation
 {
     public sealed class PokerGameController : MonoBehaviour
     {
-        const string HintsPrefsKey = "poker_hints_enabled";
-
         [SerializeField] int playerCount = 4;
         [SerializeField] int startingChips = 5000;
         [SerializeField] int smallBlind = 5;
@@ -26,13 +24,21 @@ namespace Poker.Presentation
         readonly List<RectTransform> _seatLabelRts = new List<RectTransform>();
         readonly List<Text> _seatNameLabels = new List<Text>();
         readonly List<Text> _seatChipLabels = new List<Text>();
+        readonly List<Image> _seatLabelBgs = new List<Image>();
+        readonly List<Outline> _seatLabelOutlines = new List<Outline>();
+        readonly List<bool> _seatActing = new List<bool>();
+        readonly HashSet<int> _foldAnimatedSeats = new HashSet<int>();
+        int _shownHandNumber = -1;
+
+        static readonly Color SeatNormalBg = new Color(0.04f, 0.06f, 0.12f, 0.88f);
+        static readonly Color SeatActingBg = new Color(0.82f, 0.68f, 0.12f, 0.94f);
+        static readonly Color SeatNormalOutline = new Color(1f, 1f, 1f, 0.25f);
+        static readonly Color SeatActingOutline = new Color(1f, 0.9f, 0.4f, 0.58f);
 
         Text _hudTitle;
         Text _hudDetail;
         Text _logText;
         Text _potText;
-        Text _hintText;
-        Image _hintPanel;
         Button _foldBtn;
         Button _checkCallBtn;
         Button _betRaiseBtn;
@@ -42,15 +48,12 @@ namespace Poker.Presentation
         Button _rematchBtn;
         Button _menuBtn;
         Button _exitBtn;
-        Button _hintsToggleBtn;
-        Text _hintsToggleLabel;
         GameObject _raisePanel;
         Slider _raiseSlider;
         Text _raiseAmountLabel;
         bool _raiseMode;
         float _aiTimer;
         bool _aiPending;
-        bool _hintsEnabled = true;
         Camera _cam;
         TurnArrow _turnArrow;
         Transform _tableRoot;
@@ -85,7 +88,6 @@ namespace Poker.Presentation
 
         void Start()
         {
-            _hintsEnabled = PlayerPrefs.GetInt(HintsPrefsKey, 1) == 1;
             StartCoroutine(SoftStart());
         }
 
@@ -429,13 +431,12 @@ namespace Poker.Presentation
         void BuildUi()
         {
             UiTheme.WarmUp();
+            PokerSoundFx.WarmUp();
 
             // Canvas — дочерний объект контроллера, чтобы Destroy(gameObject) убирал весь UI.
             var canvasGo = new GameObject("Canvas");
             canvasGo.transform.SetParent(transform, false);
             var canvas = canvasGo.AddComponent<Canvas>();
-            // ВАЖНО: RectTransform появляется только после Canvas — сохраняем ссылку после AddComponent.
-            _canvasRoot = canvasGo.GetComponent<RectTransform>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
@@ -445,6 +446,9 @@ namespace Poker.Presentation
             MobileLayout.ConfigureCanvas(scaler);
             canvasGo.AddComponent<GraphicRaycaster>();
             MobileLayout.EnsureTouchInput();
+
+            var uiRoot = SafeAreaLayout.Ensure(canvasGo.transform);
+            _canvasRoot = uiRoot;
 
             bool phone = MobileLayout.IsPhoneLike();
             float pad = phone ? 16f : 18f;
@@ -458,90 +462,61 @@ namespace Poker.Presentation
                 es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
             }
 
-            var leftPanel = CreatePanel(canvasGo.transform, "HudPanel",
-                new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(pad, phone ? -14f : -18f),
-                new Vector2(phone ? 420f : 440f, phone ? 64f : 60f),
-                UiTheme.Glass);
+            float hudTop = phone ? 14f : 18f;
+            float hudLeft = pad;
+            float hudRowH = phone ? 32f : 30f;
+            float potReserve = phone ? 148f : 168f;
 
-            _hudTitle = CreateText(leftPanel.transform, "Title",
-                new Vector2(0f, 0f), new Vector2(phone ? 400f : 420f, 48f), phone ? 26 : 26, FontStyle.Bold, UiTheme.TextMain);
+            _hudTitle = CreateText(uiRoot, "HandTitle",
+                new Vector2(hudLeft, -hudTop), new Vector2(400f, hudRowH),
+                phone ? 24 : 26, FontStyle.Bold, UiTheme.TextMain);
             var titleRt = _hudTitle.rectTransform;
-            titleRt.anchorMin = new Vector2(0f, 0f);
+            titleRt.anchorMin = new Vector2(0f, 1f);
             titleRt.anchorMax = new Vector2(1f, 1f);
-            titleRt.offsetMin = new Vector2(16f, 6f);
-            titleRt.offsetMax = new Vector2(-16f, -6f);
+            titleRt.pivot = new Vector2(0f, 1f);
+            titleRt.offsetMin = new Vector2(hudLeft, -(hudTop + hudRowH));
+            titleRt.offsetMax = new Vector2(-(potReserve + pad), -hudTop);
             _hudTitle.alignment = TextAnchor.MiddleLeft;
+            _hudTitle.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _hudTitle.verticalOverflow = VerticalWrapMode.Truncate;
+            _hudTitle.lineSpacing = 1f;
+            _hudTitle.supportRichText = true;
 
-            // Ошибки старта пишем в заголовок; детальный лог/блайнды в панели раздачи не показываем.
+            _potText = CreateText(uiRoot, "Pot",
+                new Vector2(-hudLeft, -hudTop), new Vector2(potReserve, hudRowH),
+                phone ? 22 : 24, FontStyle.Bold, UiTheme.CoralHot);
+            var potRt = _potText.rectTransform;
+            potRt.anchorMin = new Vector2(1f, 1f);
+            potRt.anchorMax = new Vector2(1f, 1f);
+            potRt.pivot = new Vector2(1f, 1f);
+            potRt.anchoredPosition = new Vector2(-hudLeft, -hudTop);
+            potRt.sizeDelta = new Vector2(potReserve, hudRowH);
+            _potText.alignment = TextAnchor.MiddleRight;
+            _potText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _potText.verticalOverflow = VerticalWrapMode.Truncate;
+
             _hudDetail = null;
             _logText = _hudTitle;
-
-            var potPanel = CreatePanel(canvasGo.transform, "PotPanel",
-                new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(phone ? -150f : -160f, phone ? -14f : -18f),
-                new Vector2(phone ? 220f : 240f, phone ? 56f : 56f),
-                UiTheme.GlassStrong);
-            _potText = CreateText(potPanel.transform, "Pot",
-                new Vector2(0f, 0f), new Vector2(200f, 48f), phone ? 28 : 30, FontStyle.Bold, UiTheme.CoralHot);
-            var potRt = _potText.GetComponent<RectTransform>();
-            potRt.anchorMin = new Vector2(0.5f, 0.5f);
-            potRt.anchorMax = new Vector2(0.5f, 0.5f);
-            potRt.pivot = new Vector2(0.5f, 0.5f);
-            potRt.anchoredPosition = Vector2.zero;
-            _potText.alignment = TextAnchor.MiddleCenter;
-
-            float hintToggleH = phone ? 48f : 48f;
-            float hintToggleW = phone ? 210f : 210f;
-            float hintPanelH = phone ? 118f : 100f;
-            float hintPanelW = phone ? 420f : 420f;
-            float hintLeft = pad;
-            float hintBottom = phone ? 18f : bottomY;
-
-            _hintsToggleBtn = CreateButton(canvasGo.transform, "Подсказки: вкл", Vector2.zero,
-                UiTheme.GlassStrong, ToggleHints, pill: true);
-            var toggleRt = _hintsToggleBtn.GetComponent<RectTransform>();
-            toggleRt.anchorMin = new Vector2(0f, 0f);
-            toggleRt.anchorMax = new Vector2(0f, 0f);
-            toggleRt.pivot = new Vector2(0f, 0f);
-            toggleRt.anchoredPosition = new Vector2(hintLeft, hintBottom);
-            toggleRt.sizeDelta = new Vector2(hintToggleW, hintToggleH);
-            _hintsToggleLabel = _hintsToggleBtn.GetComponentInChildren<Text>();
-            if (_hintsToggleLabel != null)
-                _hintsToggleLabel.fontSize = phone ? 18 : 20;
-            RefreshHintsToggleLabel();
-
-            float hintPanelY = hintBottom + hintToggleH + (phone ? 10f : 12f);
-            _hintPanel = CreatePanel(canvasGo.transform, "HintPanel",
-                new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
-                new Vector2(hintLeft, hintPanelY),
-                new Vector2(hintPanelW, hintPanelH),
-                UiTheme.Glass);
-            var hintTitle = CreateText(_hintPanel.transform, "HintTitle",
-                new Vector2(16f, -12f), new Vector2(hintPanelW - 32f, 28f), phone ? 16 : 15, FontStyle.Bold, UiTheme.Cyan);
-            hintTitle.text = "ВАША КОМБИНАЦИЯ";
-            _hintText = CreateText(_hintPanel.transform, "HintBody",
-                new Vector2(16f, -44f), new Vector2(hintPanelW - 32f, hintPanelH - 52f), phone ? 22 : 20, FontStyle.Normal, UiTheme.TextMain);
-
-            BuildSeatLabels(canvasGo.transform, phone);
 
             float dockW = phone ? 200f : 200f;
             float dockH = phone ? 68f : 58f;
             float dockPad = phone ? 16f : 20f;
             float dockGap = phone ? 10f : 10f;
 
-            _foldBtn = CreateButton(canvasGo.transform, "Фолд", Vector2.zero,
-                UiTheme.Danger, () => OnHuman(ActionType.Fold), pill: true);
-            _checkCallBtn = CreateButton(canvasGo.transform, "Чек", Vector2.zero,
-                UiTheme.Success, () => OnCheckOrCall(), pill: true);
-            _betRaiseBtn = CreateButton(canvasGo.transform, "Рейз", Vector2.zero,
-                UiTheme.RaiseBlue, EnterRaiseMode, pill: true);
+            BuildSeatLabels(uiRoot, phone);
+
+            _foldBtn = CreateButton(uiRoot, "Фолд", Vector2.zero,
+                UiTheme.Danger, () => OnHuman(ActionType.Fold), pill: true, uiClick: false);
+            _checkCallBtn = CreateButton(uiRoot, "Чек", Vector2.zero,
+                UiTheme.Success, PlayCheckOrCallWithSound, pill: true, uiClick: false);
+            _betRaiseBtn = CreateButton(uiRoot, "Рейз", Vector2.zero,
+                UiTheme.RaiseBlue, EnterRaiseMode, pill: true, uiClick: false);
 
             PinBottomRight(_betRaiseBtn, dockPad, dockPad, dockW, dockH);
             PinBottomRight(_checkCallBtn, dockPad, dockPad + dockH + dockGap, dockW, dockH);
             PinBottomRight(_foldBtn, dockPad, dockPad + (dockH + dockGap) * 2f, dockW, dockH);
 
-            BuildRaisePanel(canvasGo.transform, phone);
+            BuildRaisePanel(uiRoot, phone);
 
             var foldLabel = _foldBtn.GetComponentInChildren<Text>();
             var checkLabel = _checkCallBtn.GetComponentInChildren<Text>();
@@ -550,7 +525,7 @@ namespace Poker.Presentation
             if (checkLabel != null) checkLabel.fontSize = phone ? 24 : 22;
             if (betLabel0 != null) betLabel0.fontSize = phone ? 24 : 22;
 
-            _nextHandBtn = CreateButton(canvasGo.transform, "Следующая раздача", new Vector2(0f, bottomY),
+            _nextHandBtn = CreateButton(uiRoot, "Следующая раздача", new Vector2(0f, bottomY),
                 UiTheme.Coral, () =>
                 {
                     if (_winnerOverlay != null) _winnerOverlay.Hide();
@@ -563,33 +538,32 @@ namespace Poker.Presentation
             if (nextLabel != null && phone) nextLabel.fontSize = 24;
             _nextHandBtn.gameObject.SetActive(false);
 
-            _rematchBtn = CreateButton(canvasGo.transform, "Новая партия", new Vector2(phone ? -160f : -160f, bottomY),
+            _rematchBtn = CreateButton(uiRoot, "Новая партия", new Vector2(phone ? -160f : -160f, bottomY),
                 UiTheme.Success, OnRematch, pill: true);
             var rematchRt = _rematchBtn.GetComponent<RectTransform>();
             rematchRt.sizeDelta = new Vector2(phone ? 260f : 240f, btnH);
             _rematchBtn.gameObject.SetActive(false);
 
-            _menuBtn = CreateButton(canvasGo.transform, "В меню", new Vector2(phone ? 160f : 160f, bottomY),
+            _menuBtn = CreateButton(uiRoot, "В меню", new Vector2(phone ? 160f : 160f, bottomY),
                 UiTheme.GlassStrong, ReturnToMenu, pill: true);
             var menuRt = _menuBtn.GetComponent<RectTransform>();
             menuRt.sizeDelta = new Vector2(phone ? 200f : 200f, btnH);
             _menuBtn.gameObject.SetActive(false);
 
-            _exitBtn = CreateButton(canvasGo.transform, "Выйти", Vector2.zero,
-                UiTheme.GlassStrong, LeaveMatch, pill: true);
-            PinTopRight(_exitBtn, phone ? 16f : 20f, phone ? 16f : 20f, phone ? 140f : 130f, phone ? 52f : 48f);
+            _exitBtn = CreateButton(uiRoot, "Покинуть игру", Vector2.zero,
+                UiTheme.Danger, LeaveMatch, pill: true);
+            PinTopRight(_exitBtn, phone ? 16f : 20f, phone ? 16f : 20f, phone ? 196f : 184f, phone ? 52f : 48f);
             var exitLabel = _exitBtn.GetComponentInChildren<Text>();
             if (exitLabel != null)
             {
-                exitLabel.fontSize = phone ? 20 : 18;
+                exitLabel.fontSize = phone ? 19 : 17;
                 exitLabel.raycastTarget = false;
             }
             _exitBtn.transform.SetAsLastSibling();
 
             SetActionButtons(false);
-            ApplyHintsVisibility();
 
-            _winnerOverlay = WinnerOverlay.Create(canvasGo.transform);
+            _winnerOverlay = WinnerOverlay.Create(uiRoot);
             // Кнопки матча поверх баннера
             if (_rematchBtn != null) _rematchBtn.transform.SetAsLastSibling();
             if (_menuBtn != null) _menuBtn.transform.SetAsLastSibling();
@@ -704,48 +678,49 @@ namespace Poker.Presentation
             CleanupMatch();
         }
 
-        void ToggleHints()
+        void RefreshHudHeader(int handNumber, string combination, int pot)
         {
-            _hintsEnabled = !_hintsEnabled;
-            PlayerPrefs.SetInt(HintsPrefsKey, _hintsEnabled ? 1 : 0);
-            PlayerPrefs.Save();
-            RefreshHintsToggleLabel();
-            ApplyHintsVisibility();
-            RefreshHint();
-        }
+            if (_potText != null)
+                _potText.text = $"Банк {pot}";
 
-        void RefreshHintsToggleLabel()
-        {
-            if (_hintsToggleLabel != null)
-                _hintsToggleLabel.text = _hintsEnabled ? "Подсказки: вкл" : "Подсказки: выкл";
-        }
+            if (_hudTitle == null) return;
 
-        void ApplyHintsVisibility()
-        {
-            if (_hintPanel != null)
-                _hintPanel.gameObject.SetActive(_hintsEnabled);
-        }
-
-        void RefreshHint()
-        {
-            if (!_hintsEnabled || _hintText == null) return;
-            if (_onlineMode)
+            string combo = FlattenHint(combination);
+            if (string.IsNullOrEmpty(combo))
             {
-                if (_onlineState == null) return;
-                OnlineSeatPlayer me = null;
-                foreach (var p in _onlineState.Players)
-                    if (p.Id == _onlineState.YouId) { me = p; break; }
-                if (me == null || me.Hole.Count < 2) return;
-                var board = _onlineState.Board;
-                var street = ParseOnlineStreet(_onlineState.Street);
-                var temp = new Player(0, me.Name, PlayerType.Human, me.Chips);
-                temp.HoleCards.AddRange(me.Hole);
-                _hintText.text = HandHint.ForPlayer(temp, board, street);
+                _hudTitle.text = $"Раздача №{handNumber}";
                 return;
             }
-            if (_table == null) return;
-            var human = _table.Players[0];
-            _hintText.text = HandHint.ForPlayer(human, _table.Board, _table.Street);
+
+            string cyan = ColorUtility.ToHtmlStringRGB(UiTheme.Cyan);
+            _hudTitle.text = $"Раздача №{handNumber} · <color=#{cyan}>{combo}</color>";
+        }
+
+        static string GetLocalCombinationName(PokerTable table)
+        {
+            if (table == null) return "";
+            var human = table.Players[0];
+            return HandHint.CombinationName(human, table.Board, table.Street);
+        }
+
+        static string GetOnlineCombinationName(OnlineGameState state, string youId)
+        {
+            if (state == null) return "";
+            OnlineSeatPlayer me = null;
+            foreach (var p in state.Players)
+            {
+                if (p.Id == youId) { me = p; break; }
+            }
+            if (me == null || me.Hole.Count < 2) return "";
+            var temp = new Player(0, me.Name, PlayerType.Human, me.Chips);
+            temp.HoleCards.AddRange(me.Hole);
+            return HandHint.CombinationName(temp, state.Board, ParseOnlineStreet(state.Street));
+        }
+
+        static string FlattenHint(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace('\r', ' ').Replace('\n', ' ').Trim();
         }
 
         static Street ParseOnlineStreet(string s) => s switch
@@ -808,7 +783,7 @@ namespace Poker.Presentation
         }
 
         static Button CreateButton(Transform parent, string label, Vector2 anchoredPos, Color bg,
-            UnityEngine.Events.UnityAction onClick, bool pill = false)
+            UnityEngine.Events.UnityAction onClick, bool pill = false, bool uiClick = true)
         {
             var go = new GameObject(label);
             go.transform.SetParent(parent, false);
@@ -821,8 +796,7 @@ namespace Poker.Presentation
 
             var img = go.AddComponent<Image>();
             img.color = bg;
-            if (pill) UiTheme.ApplyPill(img);
-            else UiTheme.ApplyRounded(img);
+            UiTheme.ApplyRounded(img);
 
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
@@ -831,7 +805,14 @@ namespace Poker.Presentation
             colors.pressedColor = Color.Lerp(bg, Color.black, 0.18f);
             colors.disabledColor = new Color(0.25f, 0.25f, 0.3f, 0.55f);
             btn.colors = colors;
-            btn.onClick.AddListener(onClick);
+            if (uiClick)
+                PokerSoundFx.BindButton(btn, onClick);
+            else
+            {
+                UiPressAnimation.Attach(btn);
+                if (onClick != null)
+                    btn.onClick.AddListener(onClick);
+            }
 
             var textGo = new GameObject("Label");
             textGo.transform.SetParent(go.transform, false);
@@ -856,6 +837,9 @@ namespace Poker.Presentation
             _seatLabelRts.Clear();
             _seatNameLabels.Clear();
             _seatChipLabels.Clear();
+            _seatLabelBgs.Clear();
+            _seatLabelOutlines.Clear();
+            _seatActing.Clear();
 
             for (int i = 0; i < playerCount; i++)
             {
@@ -872,8 +856,12 @@ namespace Poker.Presentation
                 bg.raycastTarget = false;
                 UiTheme.ApplyRounded(bg);
                 var edge = root.AddComponent<Outline>();
-                edge.effectColor = new Color(1f, 1f, 1f, 0.25f);
+                edge.effectColor = SeatNormalOutline;
                 edge.effectDistance = new Vector2(1.2f, -1.2f);
+
+                _seatLabelBgs.Add(bg);
+                _seatLabelOutlines.Add(edge);
+                _seatActing.Add(false);
 
                 var nameGo = new GameObject("Name");
                 nameGo.transform.SetParent(root.transform, false);
@@ -920,6 +908,103 @@ namespace Poker.Presentation
         void LateUpdate()
         {
             PositionSeatLabels();
+            UpdateSeatLabelBackgrounds();
+        }
+
+        void UpdateSeatLabelBackgrounds()
+        {
+            float k = Mathf.Clamp01(Time.deltaTime * 9f);
+            for (int i = 0; i < _seatLabelBgs.Count && i < playerCount; i++)
+            {
+                bool acting = i < _seatActing.Count && _seatActing[i];
+                var bg = _seatLabelBgs[i];
+                if (bg != null)
+                    bg.color = Color.Lerp(bg.color, acting ? SeatActingBg : SeatNormalBg, k);
+                if (i < _seatLabelOutlines.Count && _seatLabelOutlines[i] != null)
+                {
+                    var ol = _seatLabelOutlines[i];
+                    ol.effectColor = Color.Lerp(ol.effectColor, acting ? SeatActingOutline : SeatNormalOutline, k);
+                }
+            }
+        }
+
+        void EnsureHandDisplayCycle(int handNumber)
+        {
+            if (handNumber == _shownHandNumber) return;
+            _shownHandNumber = handNumber;
+            _foldAnimatedSeats.Clear();
+            foreach (var kv in _holeCards)
+            {
+                if (kv.Value == null) continue;
+                if (IsVisualSeatInactive(kv.Key))
+                {
+                    HideSeatHoleCards(kv.Key);
+                    continue;
+                }
+                foreach (var card in kv.Value)
+                    card?.ResetForNewHand();
+            }
+        }
+
+        bool IsVisualSeatInactive(int visualSeat)
+        {
+            if (_onlineMode)
+            {
+                if (_onlineState == null) return false;
+                foreach (var p in _onlineState.Players)
+                {
+                    if (VisualSeat(p.Seat) != visualSeat) continue;
+                    return p.Eliminated || p.Chips <= 0;
+                }
+                return false;
+            }
+
+            if (_table == null || visualSeat < 0 || visualSeat >= _table.Players.Count)
+                return false;
+            var player = _table.Players[visualSeat];
+            return player.IsEliminated || player.Chips <= 0;
+        }
+
+        void HideSeatHoleCards(int visualSeat)
+        {
+            if (!_holeCards.TryGetValue(visualSeat, out var holes) || holes == null) return;
+            for (int c = 0; c < holes.Count; c++)
+            {
+                if (holes[c] == null) continue;
+                holes[c].gameObject.SetActive(false);
+            }
+        }
+
+        Vector3 GetFoldDriftLocal(int visualSeat)
+        {
+            if (visualSeat < 0 || visualSeat >= _seats.Count || _seats[visualSeat] == null)
+                return Vector3.down * 0.25f;
+            float rad = _seats[visualSeat].SeatAngle * Mathf.Deg2Rad;
+            Vector3 toCenter = new Vector3(-Mathf.Cos(rad), 0f, -Mathf.Sin(rad));
+            Vector3 world = toCenter * 0.7f + Vector3.down * 0.18f;
+            return _seats[visualSeat].CardAnchor.InverseTransformVector(world);
+        }
+
+        void AnimateFoldedHoleCards(int visualSeat)
+        {
+            if (_foldAnimatedSeats.Contains(visualSeat)) return;
+            if (!_holeCards.TryGetValue(visualSeat, out var holes) || holes == null) return;
+            _foldAnimatedSeats.Add(visualSeat);
+            PokerSoundFx.Play(PokerSoundFx.Sfx.Fold);
+            Vector3 drift = GetFoldDriftLocal(visualSeat);
+            for (int c = 0; c < holes.Count; c++)
+            {
+                if (holes[c] == null) continue;
+                holes[c].PlayFoldAway(drift * (c == 0 ? 0.92f : 1.08f), c * 0.05f);
+            }
+        }
+
+        void SetSeatActing(int visualSeat, bool acting)
+        {
+            while (_seatActing.Count <= visualSeat)
+                _seatActing.Add(false);
+            if (visualSeat >= 0 && visualSeat < _seatActing.Count)
+                _seatActing[visualSeat] = acting;
         }
 
         void PositionSeatLabels()
@@ -931,8 +1016,8 @@ namespace Poker.Presentation
             Rect crect = _canvasRoot.rect;
             float maxX = crect.width * 0.5f - 160f;
             float minX = -crect.width * 0.5f + 20f;
-            float maxY = crect.height * 0.5f - 20f;
-            float minY = -crect.height * 0.5f + 20f;
+            float maxY = crect.height * 0.5f - 80f;
+            float minY = -crect.height * 0.5f + 56f;
 
             for (int i = 0; i < _seats.Count && i < _seatLabelRts.Count; i++)
             {
@@ -1033,7 +1118,7 @@ namespace Poker.Presentation
             if (canLabel != null) canLabel.fontSize = phone ? 16 : 17;
 
             _raiseConfirmBtn = CreateButton(_raisePanel.transform, "OK", Vector2.zero,
-                UiTheme.Coral, ConfirmRaise, pill: true);
+                UiTheme.Coral, ConfirmRaiseWithSound, pill: true, uiClick: false);
             var confRt = _raiseConfirmBtn.GetComponent<RectTransform>();
             confRt.anchorMin = new Vector2(0f, 0f);
             confRt.anchorMax = new Vector2(1f, 0f);
@@ -1065,7 +1150,7 @@ namespace Poker.Presentation
             bgRt.offsetMax = Vector2.zero;
             var bgImg = bgGo.AddComponent<Image>();
             bgImg.color = new Color(1f, 1f, 1f, 0.12f);
-            UiTheme.ApplyPill(bgImg);
+            UiTheme.ApplyRoundedSmall(bgImg);
 
             var fillArea = new GameObject("Fill Area");
             fillArea.transform.SetParent(sliderGo.transform, false);
@@ -1084,7 +1169,7 @@ namespace Poker.Presentation
             fillRt.offsetMax = Vector2.zero;
             var fillImg = fillGo.AddComponent<Image>();
             fillImg.color = UiTheme.Coral;
-            UiTheme.ApplyPill(fillImg);
+            UiTheme.ApplyRoundedSmall(fillImg);
 
             var handleArea = new GameObject("Handle Slide Area");
             handleArea.transform.SetParent(sliderGo.transform, false);
@@ -1158,6 +1243,7 @@ namespace Poker.Presentation
 
         void EnterRaiseMode()
         {
+            PokerSoundFx.Play(PokerSoundFx.Sfx.Button);
             if (_onlineMode)
             {
                 if (_onlineState?.Legal == null) return;
@@ -1216,6 +1302,28 @@ namespace Poker.Presentation
         {
             if (_exitBtn != null)
                 _exitBtn.gameObject.SetActive(!_raiseMode);
+        }
+
+        void ConfirmRaiseWithSound()
+        {
+            PokerSoundFx.Play(PokerSoundFx.Sfx.Raise);
+            ConfirmRaise();
+        }
+
+        void PlayCheckOrCallWithSound()
+        {
+            if (_onlineMode)
+            {
+                var legal = _onlineState?.Legal;
+                if (legal != null)
+                    PokerSoundFx.Play(legal.CanCheck ? PokerSoundFx.Sfx.Check : PokerSoundFx.Sfx.Call);
+            }
+            else if (_table != null && _table.AwaitingHumanAction)
+            {
+                var legal = _table.GetLegalActions(_table.ActingSeat);
+                PokerSoundFx.Play(legal.CanCheck ? PokerSoundFx.Sfx.Check : PokerSoundFx.Sfx.Call);
+            }
+            OnCheckOrCall();
         }
 
         void ConfirmRaise()
@@ -1353,8 +1461,9 @@ namespace Poker.Presentation
 
             if (_table == null) return;
 
-            _hudTitle.text = $"Раздача №{_table.HandNumber}  ·  {PokerRu.StreetName(_table.Street)}";
-            _potText.text = $"БАНК  {_table.Pot}";
+            EnsureHandDisplayCycle(_table.HandNumber);
+
+            RefreshHudHeader(_table.HandNumber, GetLocalCombinationName(_table), _table.Pot);
 
             bool showTurn = _table.ActingSeat >= 0 &&
                             _table.Street >= Street.Preflop &&
@@ -1382,23 +1491,26 @@ namespace Poker.Presentation
                 bool dealer = _table.DealerSeat == i;
                 bool handWinner = IsSeatHandWinner(i);
                 _seats[i].Refresh(player, dealer, acting, _table.Street, _table.BigBlind, handWinner);
+                SetSeatActing(i, acting);
 
                 if (i < _seatNameLabels.Count)
                 {
                     string tag = acting ? " ●" : "";
-                    if (player.HasFolded) tag = " · фолд";
-                    else if (player.IsEliminated || player.Chips <= 0) tag = " · out";
+                    if (player.IsEliminated || player.Chips <= 0) tag = " · out";
+                    else if (player.HasFolded) tag = " · фолд";
                     _seatNameLabels[i].text = player.Name + tag;
                     _seatNameLabels[i].color = acting
                         ? UiTheme.CoralHot
-                        : player.HasFolded
+                        : player.IsEliminated || player.Chips <= 0 || player.HasFolded
                             ? UiTheme.TextDim
                             : UiTheme.TextMain;
                 }
                 if (i < _seatChipLabels.Count)
                 {
                     _seatChipLabels[i].text = player.IsEliminated ? "—" : $"{player.Chips}";
-                    _seatChipLabels[i].color = player.HasFolded ? UiTheme.TextDim : UiTheme.Cyan;
+                    _seatChipLabels[i].color = player.IsEliminated || player.Chips <= 0 || player.HasFolded
+                        ? UiTheme.TextDim
+                        : UiTheme.Cyan;
                 }
 
                 bool reveal = player.Type == PlayerType.Human ||
@@ -1410,6 +1522,18 @@ namespace Poker.Presentation
                 bool faceTowardMe = reveal && player.Type != PlayerType.Human;
 
                 var holes = _holeCards[i];
+                if (player.IsEliminated || player.Chips <= 0)
+                {
+                    HideSeatHoleCards(i);
+                    continue;
+                }
+
+                if (player.HasFolded)
+                {
+                    AnimateFoldedHoleCards(i);
+                    continue;
+                }
+
                 for (int c = 0; c < 2; c++)
                 {
                     if (player.IsEliminated || player.HoleCards.Count == 0)
@@ -1430,8 +1554,6 @@ namespace Poker.Presentation
 
             PositionSeatLabels();
 
-            RefreshHint();
-
             if (_table.AwaitingHumanAction)
                 RefreshActionButtons();
             else if (_table.Street != Street.HandComplete)
@@ -1444,10 +1566,11 @@ namespace Poker.Presentation
             ResolveMyServerSeat();
             ApplySeatLayout(_onlineState.Players.Count);
 
-            _hudTitle.text = $"Раздача №{_onlineState.HandNumber}  ·  {PokerRu.StreetNameFromServer(_onlineState.Street)}";
-            _potText.text = $"БАНК  {_onlineState.Pot}";
-            if (!string.IsNullOrEmpty(_onlineState.LastLog) && _onlineState.LastLog != _hudTitle.text)
-                _hudTitle.text += $"\n{_onlineState.LastLog}";
+            EnsureHandDisplayCycle(_onlineState.HandNumber);
+
+            RefreshHudHeader(_onlineState.HandNumber,
+                GetOnlineCombinationName(_onlineState, _onlineState.YouId),
+                _onlineState.Pot);
 
             bool showTurn = _onlineState.Acting >= 0 &&
                             (_onlineState.Street == "preflop" || _onlineState.Street == "flop" ||
@@ -1476,6 +1599,7 @@ namespace Poker.Presentation
 
             for (int vi = 0; vi < playerCount && vi < _seats.Count; vi++)
             {
+                SetSeatActing(vi, false);
                 OnlineSeatPlayer op = null;
                 foreach (var p in _onlineState.Players)
                 {
@@ -1495,19 +1619,26 @@ namespace Poker.Presentation
                     IsEliminated = op.Eliminated
                 };
                 _seats[vi].Refresh(temp, dealer, acting, ParseOnlineStreet(_onlineState.Street), _onlineState.BigBlind, false);
+                SetSeatActing(vi, acting);
 
                 if (vi < _seatNameLabels.Count)
                 {
                     string tag = acting ? " ●" : "";
-                    if (op.Folded) tag = " · фолд";
-                    else if (op.Eliminated || op.Chips <= 0) tag = " · out";
+                    if (op.Eliminated || op.Chips <= 0) tag = " · out";
+                    else if (op.Folded) tag = " · фолд";
                     _seatNameLabels[vi].text = op.Name + tag;
-                    _seatNameLabels[vi].color = acting ? UiTheme.CoralHot : op.Folded ? UiTheme.TextDim : UiTheme.TextMain;
+                    _seatNameLabels[vi].color = acting
+                        ? UiTheme.CoralHot
+                        : op.Eliminated || op.Chips <= 0 || op.Folded
+                            ? UiTheme.TextDim
+                            : UiTheme.TextMain;
                 }
                 if (vi < _seatChipLabels.Count)
                 {
                     _seatChipLabels[vi].text = op.Eliminated ? "—" : $"{op.Chips}";
-                    _seatChipLabels[vi].color = op.Folded ? UiTheme.TextDim : UiTheme.Cyan;
+                    _seatChipLabels[vi].color = op.Eliminated || op.Chips <= 0 || op.Folded
+                        ? UiTheme.TextDim
+                        : UiTheme.Cyan;
                 }
 
                 bool reveal = isMe ||
@@ -1517,6 +1648,19 @@ namespace Poker.Presentation
 
                 bool faceTowardMe = reveal && !isMe;
                 var holes = _holeCards[vi];
+
+                if (op.Eliminated || op.Chips <= 0)
+                {
+                    HideSeatHoleCards(vi);
+                    continue;
+                }
+
+                if (op.Folded)
+                {
+                    AnimateFoldedHoleCards(vi);
+                    continue;
+                }
+
                 for (int c = 0; c < 2; c++)
                 {
                     if (op.Eliminated)
@@ -1547,7 +1691,6 @@ namespace Poker.Presentation
             }
 
             PositionSeatLabels();
-            RefreshHint();
 
             if (_onlineState.IsMyTurn(_onlineState.Legal))
                 RefreshOnlineActionButtons();

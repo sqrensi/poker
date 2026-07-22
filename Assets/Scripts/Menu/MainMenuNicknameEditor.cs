@@ -52,30 +52,38 @@ namespace Poker.Menu
             titleRt.pivot = new Vector2(0.5f, 1f);
 
             // Pill input
+            const float cardPadX = 14f;
+            const float textPadX = 22f;
+            const float btnW = 118f;
+            const float btnGap = 10f;
+
             var fieldGo = new GameObject("NickInput");
             fieldGo.transform.SetParent(transform, false);
             var fieldRt = fieldGo.AddComponent<RectTransform>();
             fieldRt.anchorMin = new Vector2(0f, 0.5f);
             fieldRt.anchorMax = new Vector2(1f, 0.5f);
             fieldRt.pivot = new Vector2(0.5f, 0.5f);
-            fieldRt.anchoredPosition = new Vector2(-58f, -4f);
-            fieldRt.sizeDelta = new Vector2(-140f, 46f);
+            fieldRt.anchoredPosition = new Vector2(0f, -4f);
+            fieldRt.offsetMin = new Vector2(cardPadX, -27f);
+            fieldRt.offsetMax = new Vector2(-(btnW + btnGap + cardPadX), 19f);
             var fieldImg = fieldGo.AddComponent<Image>();
             fieldImg.color = new Color(0f, 0f, 0f, 0.35f);
-            UiTheme.ApplyPill(fieldImg);
+            UiTheme.ApplyRounded(fieldImg);
 
             var textGo = new GameObject("Text");
             textGo.transform.SetParent(fieldGo.transform, false);
             var textRt = textGo.AddComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(18f, 4f);
-            textRt.offsetMax = new Vector2(-18f, -4f);
+            textRt.offsetMin = new Vector2(textPadX, 6f);
+            textRt.offsetMax = new Vector2(-textPadX, -6f);
             var text = textGo.AddComponent<Text>();
             text.fontSize = 20;
             text.color = UiTheme.TextMain;
             text.alignment = TextAnchor.MiddleLeft;
             text.supportRichText = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Truncate;
             UiFont.MakeCrisp(text, 0.25f);
 
             var phGo = new GameObject("Placeholder");
@@ -83,8 +91,8 @@ namespace Poker.Menu
             var phRt = phGo.AddComponent<RectTransform>();
             phRt.anchorMin = Vector2.zero;
             phRt.anchorMax = Vector2.one;
-            phRt.offsetMin = new Vector2(18f, 4f);
-            phRt.offsetMax = new Vector2(-18f, -4f);
+            phRt.offsetMin = new Vector2(textPadX, 6f);
+            phRt.offsetMax = new Vector2(-textPadX, -6f);
             var ph = phGo.AddComponent<Text>();
             ph.fontSize = 18;
             ph.fontStyle = FontStyle.Italic;
@@ -107,14 +115,15 @@ namespace Poker.Menu
             btnRt.anchorMin = new Vector2(1f, 0.5f);
             btnRt.anchorMax = new Vector2(1f, 0.5f);
             btnRt.pivot = new Vector2(1f, 0.5f);
-            btnRt.anchoredPosition = new Vector2(-14f, -4f);
-            btnRt.sizeDelta = new Vector2(118f, 46f);
+            btnRt.anchoredPosition = new Vector2(-cardPadX, -4f);
+            btnRt.sizeDelta = new Vector2(btnW, 46f);
             _actionImg = btnGo.AddComponent<Image>();
             _actionImg.color = UiTheme.GlassStrong;
-            UiTheme.ApplyPill(_actionImg);
+            UiTheme.ApplyRounded(_actionImg);
             _actionBtn = btnGo.AddComponent<Button>();
             _actionBtn.targetGraphic = _actionImg;
-            _actionBtn.onClick.AddListener(OnAction);
+            UiPressAnimation.Attach(_actionBtn);
+            _actionBtn.onClick.AddListener(PokerSoundFx.WithButton(OnAction));
 
             var lblGo = new GameObject("Label");
             lblGo.transform.SetParent(btnGo.transform, false);
@@ -129,12 +138,17 @@ namespace Poker.Menu
             _actionLabel.color = UiTheme.TextMain;
             UiFont.MakeCrisp(_actionLabel, 0.3f);
 
-            _status = CreateLabel(transform, "", new Vector2(0f, 10f), new Vector2(440f, 20f), 13,
+            _status = CreateLabel(transform, "", Vector2.zero, Vector2.zero, 13,
                 FontStyle.Normal, UiTheme.TextDim);
             _status.alignment = TextAnchor.MiddleCenter;
+            _status.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _status.verticalOverflow = VerticalWrapMode.Truncate;
             var stRt = _status.rectTransform;
-            stRt.anchorMin = stRt.anchorMax = new Vector2(0.5f, 0f);
+            stRt.anchorMin = new Vector2(0f, 0f);
+            stRt.anchorMax = new Vector2(1f, 0f);
             stRt.pivot = new Vector2(0.5f, 0f);
+            stRt.offsetMin = new Vector2(cardPadX, 10f);
+            stRt.offsetMax = new Vector2(-cardPadX, 30f);
 
             RefreshFromPrefs();
             SetEditing(false);

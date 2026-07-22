@@ -53,6 +53,7 @@ namespace Poker.Presentation
 
             SetProgress(0.4f, "Шрифты UI…");
             UiTheme.WarmUp();
+            PokerSoundFx.WarmUp();
             yield return null;
 
             SetProgress(0.65f, "Карты…");
@@ -96,9 +97,7 @@ namespace Poker.Presentation
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 500;
             var scaler = _root.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
+            MobileLayout.ConfigureCanvas(scaler);
             _root.AddComponent<GraphicRaycaster>();
 
             var bg = MakeImage(_root.transform, "BG", UiTheme.Bg, flat: true);
@@ -107,8 +106,10 @@ namespace Poker.Presentation
             UiTheme.MakeOrb(_root.transform, "OrbV", new Vector2(-0.1f, 0.3f), new Vector2(0.6f, 1.1f), UiTheme.OrbViolet);
             UiTheme.MakeOrb(_root.transform, "OrbC", new Vector2(0.4f, -0.15f), new Vector2(1.1f, 0.55f), UiTheme.OrbCyan);
 
+            var uiRoot = SafeAreaLayout.Ensure(_root.transform);
+
             var titleGo = new GameObject("Title");
-            titleGo.transform.SetParent(_root.transform, false);
+            titleGo.transform.SetParent(uiRoot, false);
             var titleRt = titleGo.AddComponent<RectTransform>();
             titleRt.anchorMin = titleRt.anchorMax = titleRt.pivot = new Vector2(0.5f, 0.5f);
             titleRt.anchoredPosition = new Vector2(0f, 80f);
@@ -122,18 +123,18 @@ namespace Poker.Presentation
             UiFont.MakeCrisp(title, 0.4f);
             UiTheme.StyleLabel(title);
 
-            _status = MakeText(_root.transform, "Status", new Vector2(0f, -10f), 24, UiTheme.TextSoft);
+            _status = MakeText(uiRoot, "Status", new Vector2(0f, -10f), 24, UiTheme.TextSoft);
             _status.text = "Загрузка…";
 
-            var barBg = MakeImage(_root.transform, "BarBg", new Color(1f, 1f, 1f, 0.08f), flat: false);
-            UiTheme.ApplyPill(barBg);
+            var barBg = MakeImage(uiRoot, "BarBg", new Color(1f, 1f, 1f, 0.08f), flat: false);
+            UiTheme.ApplyRoundedSmall(barBg);
             var barBgRt = barBg.rectTransform;
             barBgRt.anchorMin = barBgRt.anchorMax = barBgRt.pivot = new Vector2(0.5f, 0.5f);
             barBgRt.anchoredPosition = new Vector2(0f, -70f);
             barBgRt.sizeDelta = new Vector2(480f, 14f);
 
             _barFill = MakeImage(barBg.transform, "BarFill", UiTheme.Coral, flat: false);
-            UiTheme.ApplyPill(_barFill);
+            UiTheme.ApplyRoundedSmall(_barFill);
             var fillRt = _barFill.rectTransform;
             fillRt.anchorMin = new Vector2(0f, 0f);
             fillRt.anchorMax = new Vector2(0.05f, 1f);

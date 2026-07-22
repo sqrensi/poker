@@ -4,8 +4,7 @@ using UnityEngine.UI;
 namespace Poker.Presentation
 {
     /// <summary>
-    /// Единый визуальный язык Glass Night: палитра, шрифты, скруглённые спрайты.
-    /// Без этого Image рисуется 1×1 квадратом — отсюда «спам прямоугольников».
+    /// Glass Night UI — прямоугольники с мягким скруглением (не «pill»/ромбы).
     /// </summary>
     public static class UiTheme
     {
@@ -30,27 +29,36 @@ namespace Poker.Presentation
         public static readonly Color RowIdle = new Color(1f, 1f, 1f, 0.06f);
         public static readonly Color Folded = new Color(1f, 1f, 1f, 0.04f);
 
-        const int TexSize = 64;
-        const int Corner = 18;
-        const int Border = 20; // 9-slice border
+        // ~22px скругление — border ≤ половины высоты мелких элементов (44px+)
+        const int TexSize = 128;
+        const int Corner = 22;
+        const int Border = 24;
+        const int SmallCorner = 10;
+        const int SmallBorder = 12;
+        const float SpritePpu = 100f;
+        const float EdgeSoftness = 1.25f;
 
         static Sprite _rounded;
-        static Sprite _pill;
+        static Sprite _roundedSmall;
         static Sprite _circle;
+
+        static float SmoothAlpha(float dist, float radius)
+        {
+            return Mathf.Clamp01(Mathf.SmoothStep(1f, 0f, (dist - radius + EdgeSoftness) / EdgeSoftness));
+        }
 
         public static Sprite RoundedSprite()
         {
             if (_rounded != null) return _rounded;
-            _rounded = MakeSliced(Corner, "PokerUIRounded");
+            _rounded = MakeSliced(Corner, Border, "PokerUIRounded");
             return _rounded;
         }
 
-        public static Sprite PillSprite()
+        public static Sprite RoundedSmallSprite()
         {
-            if (_pill != null) return _pill;
-            // Fully round ends → half height radius on 64px = 32
-            _pill = MakeSliced(TexSize / 2 - 1, "PokerUIPill");
-            return _pill;
+            if (_roundedSmall != null) return _roundedSmall;
+            _roundedSmall = MakeSliced(SmallCorner, SmallBorder, "PokerUIRoundedSmall");
+            return _roundedSmall;
         }
 
         public static Sprite CircleSprite()
@@ -58,26 +66,27 @@ namespace Poker.Presentation
             if (_circle != null) return _circle;
             var tex = new Texture2D(TexSize, TexSize, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
+            tex.anisoLevel = 2;
             tex.wrapMode = TextureWrapMode.Clamp;
             float c = (TexSize - 1) * 0.5f;
-            float r = c - 0.5f;
+            float r = c - 1.5f;
             for (int y = 0; y < TexSize; y++)
             for (int x = 0; x < TexSize; x++)
             {
                 float d = Vector2.Distance(new Vector2(x, y), new Vector2(c, c));
-                float a = Mathf.Clamp01(r - d + 1f);
-                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, SmoothAlpha(d, r)));
             }
-            tex.Apply(false, false);
-            _circle = Sprite.Create(tex, new Rect(0, 0, TexSize, TexSize), new Vector2(0.5f, 0.5f), 100f);
+            tex.Apply(false, true);
+            _circle = Sprite.Create(tex, new Rect(0, 0, TexSize, TexSize), new Vector2(0.5f, 0.5f), SpritePpu);
             _circle.name = "PokerUICircle";
             return _circle;
         }
 
-        static Sprite MakeSliced(int radius, string name)
+        static Sprite MakeSliced(int radius, int border, string name)
         {
             var tex = new Texture2D(TexSize, TexSize, TextureFormat.RGBA32, false);
             tex.filterMode = FilterMode.Bilinear;
+            tex.anisoLevel = 2;
             tex.wrapMode = TextureWrapMode.Clamp;
             float r = radius;
             for (int y = 0; y < TexSize; y++)
@@ -91,19 +100,20 @@ namespace Poker.Presentation
                     float dx = r - ax;
                     float dy = r - ay;
                     float d = Mathf.Sqrt(dx * dx + dy * dy);
-                    a = Mathf.Clamp01(r - d + 1f);
+                    a = SmoothAlpha(d, r);
                 }
                 tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
             }
-            tex.Apply(false, false);
+            tex.Apply(false, true);
+            var b = border;
             var sp = Sprite.Create(
                 tex,
                 new Rect(0, 0, TexSize, TexSize),
                 new Vector2(0.5f, 0.5f),
-                100f,
+                SpritePpu,
                 0,
                 SpriteMeshType.FullRect,
-                new Vector4(Border, Border, Border, Border));
+                new Vector4(b, b, b, b));
             sp.name = name;
             return sp;
         }
@@ -113,25 +123,33 @@ namespace Poker.Presentation
             if (img == null) return;
             img.sprite = RoundedSprite();
             img.type = Image.Type.Sliced;
-            img.pixelsPerUnitMultiplier = 1.15f;
+            img.pixelsPerUnitMultiplier = 1f;
             img.preserveAspect = false;
+            img.material = null;
         }
 
-        public static void ApplyPill(Image img)
+        /// <summary>Тонкие полоски (прогресс, слайдер) — малый радиус, без ромба.</summary>
+        public static void ApplyRoundedSmall(Image img)
         {
             if (img == null) return;
-            img.sprite = PillSprite();
+            img.sprite = RoundedSmallSprite();
             img.type = Image.Type.Sliced;
             img.pixelsPerUnitMultiplier = 1f;
             img.preserveAspect = false;
+            img.material = null;
         }
+
+        /// <summary>Тот же мягкий прямоугольник (pill больше не используем — даёт ромбы).</summary>
+        public static void ApplyPill(Image img) => ApplyRounded(img);
 
         public static void ApplyCircle(Image img)
         {
             if (img == null) return;
             img.sprite = CircleSprite();
             img.type = Image.Type.Simple;
+            img.pixelsPerUnitMultiplier = 1f;
             img.preserveAspect = true;
+            img.material = null;
         }
 
         public static void StyleLabel(Text text, bool softOutline = true)
@@ -176,8 +194,11 @@ namespace Poker.Presentation
 
         public static void WarmUp()
         {
+            _rounded = null;
+            _roundedSmall = null;
+            _circle = null;
             RoundedSprite();
-            PillSprite();
+            RoundedSmallSprite();
             CircleSprite();
             UiFont.Builtin();
         }

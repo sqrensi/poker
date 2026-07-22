@@ -78,8 +78,6 @@ namespace Poker.Network
             _error.text = "";
             int max = qs.MaxPlayers > 0 ? qs.MaxPlayers : 4;
             _status.text = $"В очереди: {qs.QueueSize} / {max}\nОжидание: {qs.WaitedSec} сек";
-            if (OnlineMatchPreferences.FillWithBots)
-                _status.text += "\nБоты доберут стол до 4";
             if (qs.QueueSize >= qs.MinPlayers && qs.QueueSize < max)
                 _status.text += $"\nСтарт через {qs.FillTimeoutSec} сек без новых игроков";
         }
@@ -183,8 +181,7 @@ namespace Poker.Network
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 60;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080, 1920);
+            MobileLayout.ConfigureCanvas(scaler);
             canvasGo.AddComponent<GraphicRaycaster>();
             MobileLayout.EnsureTouchInput();
 
@@ -205,8 +202,10 @@ namespace Poker.Network
             bgImg.color = UiTheme.Bg;
             bgImg.sprite = UiFont.WhiteSprite();
 
+            var uiRoot = SafeAreaLayout.Ensure(canvasGo.transform);
+
             var card = new GameObject("Card");
-            card.transform.SetParent(canvasGo.transform, false);
+            card.transform.SetParent(uiRoot, false);
             var cardRt = card.AddComponent<RectTransform>();
             cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
             cardRt.sizeDelta = new Vector2(520f, 360f);
@@ -229,7 +228,8 @@ namespace Poker.Network
             UiTheme.ApplyRounded(cimg);
             var btn = cancel.AddComponent<Button>();
             btn.targetGraphic = cimg;
-            btn.onClick.AddListener(CancelSearch);
+            UiPressAnimation.Attach(btn);
+            btn.onClick.AddListener(PokerSoundFx.WithButton(CancelSearch));
             var cancelLabel = MakeText(cancel.transform, "Отмена", Vector2.zero, 22, FontStyle.Bold, UiTheme.TextMain);
             var cancelLabelRt = cancelLabel.rectTransform;
             cancelLabelRt.anchorMin = Vector2.zero;

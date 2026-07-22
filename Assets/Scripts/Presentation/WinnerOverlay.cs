@@ -87,7 +87,7 @@ namespace Poker.Presentation
             var aImg = accent.AddComponent<Image>();
             aImg.color = UiTheme.Coral;
             aImg.raycastTarget = false;
-            UiTheme.ApplyPill(aImg);
+            UiTheme.ApplyRoundedSmall(aImg);
 
             _title = CreateCenteredText(panelGo.transform, "Title", new Vector2(0f, 22f), 42, FontStyle.Bold,
                 UiTheme.TextMain);

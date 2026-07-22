@@ -150,6 +150,39 @@ namespace Poker.Presentation
             return $"{PokerRu.CategoryName(hv.Category)} {stage}\n{hv.Description}";
         }
 
+        /// <summary>Короткое название комбинации для HUD (без панели подсказок).</summary>
+        public static string CombinationName(Player player, IReadOnlyList<Card> board, Street street)
+        {
+            if (player == null || player.HasFolded || player.IsEliminated)
+                return "";
+            if (player.HoleCards.Count < 2)
+                return "";
+            if (street == Street.MatchComplete || street == Street.HandComplete)
+                return "";
+
+            if (board == null || board.Count < 3)
+            {
+                string pre = DescribePreflop(player.HoleCards[0], player.HoleCards[1]);
+                int nl = pre.IndexOf('\n');
+                return FlattenOneLine(nl >= 0 ? pre.Substring(0, nl) : pre);
+            }
+
+            var seven = new List<Card>(7);
+            seven.AddRange(player.HoleCards);
+            seven.AddRange(board);
+            var hv = HandEvaluator.EvaluateBest(seven);
+            return FlattenOneLine(PokerRu.CategoryName(hv.Category));
+        }
+
+        static string FlattenOneLine(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = s.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            while (s.Contains("  "))
+                s = s.Replace("  ", " ");
+            return s;
+        }
+
         static string DescribePreflop(Card a, Card b)
         {
             bool pair = a.Rank == b.Rank;
